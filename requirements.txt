@@ -1,0 +1,17 @@
+# --- scraping / dataset (existing main.py) ---
+requests
+beautifulsoup4
+pillow
+tqdm
+
+# --- recognition pipeline ---
+torch
+transformers
+rembg
+onnxruntime
+
+# --- knowledge graph ---
+neo4j
+
+# --- config ---
+python-dotenv

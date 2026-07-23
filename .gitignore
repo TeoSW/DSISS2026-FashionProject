@@ -1,0 +1,28 @@
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- secrets / local config ---
+.env
+kaggle.json
+
+# --- datasets and model output (big, regenerable) ---
+data/
+*.zip
+*.part
+cutout.png
+
+# --- neo4j docker volume ---
+neo4j_data/
+
+# --- editors / tooling ---
+.idea/
+.vscode/
+.claude/settings.local.json
+
+# --- os ---
+Thumbs.db
+.DS_Store

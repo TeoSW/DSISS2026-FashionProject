@@ -1,0 +1,11 @@
+services:
+  neo4j:
+    image: neo4j:5
+    container_name: neo4j-fashion
+    ports:
+      - "7474:7474"   # web UI (browser at http://localhost:7474)
+      - "7687:7687"   # bolt protocol (python driver connects here)
+    environment:
+      NEO4J_AUTH: neo4j/parola123      # user/password - change before production
+    volumes:
+      - ./neo4j_data:/data             # graph persists between restarts
