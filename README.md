@@ -1,5 +1,7 @@
 # DSISS-2026-Code
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Clothing recognition pipeline: photo → background removal → CLIP tags → Neo4j knowledge graph.
 CLI first, frontend later.
 
@@ -9,12 +11,20 @@ CLI first, frontend later.
 |-------|------|---------|
 | rembg + U2Net | background removal | MIT / Apache 2.0 |
 | CLIP | zero-shot tagging | MIT |
-| Neo4j Community | knowledge graph | GPLv3 (Startup Program for SaaS) |
+| transformers, torch, neo4j driver | runtime | Apache 2.0 / BSD-3 |
+| Neo4j Community | knowledge graph | GPLv3, see note below |
+| Fashion-MNIST | baseline dataset | MIT |
 | Fashionpedia | **eval / research only** | annotations CC-BY 4.0; images = 3rd-party |
 
-The commercial product runs **zero-shot on the user's own images** — nothing is trained on
+The commercial product runs **zero-shot on the user's own images**, nothing is trained on
 Fashionpedia images, so there is no image-licensing risk. Fashionpedia is used only to measure
 accuracy in the thesis.
+
+**On the GPLv3 in that table:** this project talks to Neo4j over the Bolt network protocol,
+through a driver that is Apache 2.0. Two separate processes, no linking, and the server is
+never redistributed here (`docker-compose.yml` pulls the official image). The GPL therefore
+does not reach this code, which is why it can be MIT. Bundling and shipping the Neo4j
+Community binaries inside a product would be a different question.
 
 ## Setup
 
@@ -127,3 +137,18 @@ docker-compose.yml   Neo4j service
 4. Optional fine-tuning if zero-shot is weak (research only)
 5. Conversational layer: LLM → Cypher over the graph
 6. Frontend (Streamlit)
+
+## License
+
+[MIT](LICENSE).
+
+The datasets are not covered by it and keep their own terms:
+
+- **Fashion-MNIST**, Xiao, Rasul & Vollgraf (2017), Zalando Research. MIT.
+- **Fashionpedia**, Jia et al. (2020). Annotations CC-BY 4.0; the images belong to
+  their respective owners, so they are used for evaluation only and are never
+  redistributed from this repository (`data/` is gitignored).
+
+`scraper.py` can also crawl product listings. It honours `robots.txt` and rate-limits
+itself, but robots.txt is not a licence: whoever points it at a site is responsible for
+that site's terms of service and for the copyright on the images it collects.
