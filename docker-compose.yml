@@ -1,11 +1,17 @@
 services:
   neo4j:
-    image: neo4j:5
+    image: neo4j:5.26-community   # pinned: 5.26 is the current LTS line
     container_name: neo4j-fashion
     ports:
       - "7474:7474"   # web UI (browser at http://localhost:7474)
       - "7687:7687"   # bolt protocol (python driver connects here)
     environment:
-      NEO4J_AUTH: neo4j/parola123      # user/password - change before production
+      # Password comes from .env, the same file config.py reads, so the two can
+      # never drift apart. The username is always "neo4j": Community edition has
+      # no user management, so NEO4J_AUTH cannot create any other account.
+      # This is only read when ./neo4j_data is empty. On an already initialised
+      # database, change the password with Cypher instead:
+      #   ALTER CURRENT USER SET PASSWORD FROM 'old' TO 'new'
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-parola123}
     volumes:
       - ./neo4j_data:/data             # graph persists between restarts

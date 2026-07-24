@@ -18,8 +18,12 @@ import json
 import sys
 import uuid
 
-from config import SEASONS
-from pipeline import classify, graph, remove_bg, weather
+from config import DATASETS, SEASONS
+from pipeline import graph, weather
+
+# classify and remove_bg pull in torch / transformers / rembg, several GB of
+# imports. They are loaded inside cmd_analyze so that test-db, seed and query
+# still run on a machine that only has the neo4j driver installed.
 
 _GROUPS = ("category", "material", "style", "color", "sleeve")
 
@@ -60,11 +64,27 @@ def cmd_seed(_args):
         sys.exit(1)
     graph.seed_ontology()
     print(
-        f"ontology loaded: {len(SEASONS)} seasons + material/category warmth tables"
+        f"ontology loaded: {len(SEASONS)} seasons + material/category warmth "
+        f"tables + {len(DATASETS)} datasets"
     )
+    cmd_stats(None)
+
+
+def cmd_stats(_args):
+    if not graph.ping():
+        sys.exit(1)
+    s = graph.stats()
+    print("\nnodes")
+    for label, n in s["nodes"].items():
+        print(f"  {label:14} {n}")
+    print("relationships")
+    for rel, n in s["relationships"].items():
+        print(f"  {rel:14} {n}")
 
 
 def cmd_analyze(args):
+    from pipeline import classify, remove_bg
+
     print(f"removing background: {args.image}")
     cutout = remove_bg.remove_background(args.image)
     rgb = remove_bg.on_white(cutout)
@@ -79,6 +99,7 @@ def cmd_analyze(args):
         graph.save_garment(
             garment_id, args.image, tags,
             warmth=score, layer=weather.layer_of(tags),
+            dataset=args.dataset,
         )
         # asked of the graph, not of the model
         seasons = graph.infer_weather(garment_id)
@@ -138,13 +159,21 @@ def main():
     sub.add_parser("test-db", help="check Neo4j connection").set_defaults(func=cmd_test_db)
 
     sub.add_parser(
-        "seed", help="load the warmth/season ontology into Neo4j"
+        "seed", help="load the warmth/season/dataset ontology into Neo4j"
     ).set_defaults(func=cmd_seed)
+
+    sub.add_parser(
+        "stats", help="count the nodes and relationships in the graph"
+    ).set_defaults(func=cmd_stats)
 
     a = sub.add_parser("analyze", help="tag one image")
     a.add_argument("image")
     a.add_argument("--save", action="store_true", help="store result in Neo4j")
     a.add_argument("--json", action="store_true", help="print raw JSON")
+    a.add_argument(
+        "--dataset", choices=[d["name"] for d in DATASETS],
+        help="record which dataset the image came from (licence provenance)",
+    )
     a.set_defaults(func=cmd_analyze)
 
     q = sub.add_parser("query", help="query stored garments")

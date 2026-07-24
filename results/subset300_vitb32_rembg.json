@@ -1,0 +1,182 @@
+{
+  "instances": 300,
+  "remove_bg": true,
+  "top1": 0.49333333333333335,
+  "top3": 0.7266666666666667,
+  "majority_baseline": 0.29,
+  "mean_confidence": 0.4654266666666667,
+  "per_class": {
+    "dress": {
+      "support": 87,
+      "recall": 0.6896551724137931,
+      "precision": 0.6976744186046512
+    },
+    "t-shirt": {
+      "support": 51,
+      "recall": 0.11764705882352941,
+      "precision": 0.8571428571428571
+    },
+    "trousers": {
+      "support": 37,
+      "recall": 0.5945945945945946,
+      "precision": 0.6666666666666666
+    },
+    "skirt": {
+      "support": 22,
+      "recall": 0.6363636363636364,
+      "precision": 0.2978723404255319
+    },
+    "jeans": {
+      "support": 20,
+      "recall": 0.6,
+      "precision": 0.5
+    },
+    "shirt": {
+      "support": 18,
+      "recall": 0.16666666666666666,
+      "precision": 0.5
+    },
+    "shorts": {
+      "support": 18,
+      "recall": 0.3333333333333333,
+      "precision": 0.3157894736842105
+    },
+    "jacket": {
+      "support": 17,
+      "recall": 0.47058823529411764,
+      "precision": 0.4
+    },
+    "blazer": {
+      "support": 15,
+      "recall": 0.6666666666666666,
+      "precision": 0.45454545454545453
+    },
+    "coat": {
+      "support": 8,
+      "recall": 0.5,
+      "precision": 0.21052631578947367
+    },
+    "sweater": {
+      "support": 7,
+      "recall": 0.42857142857142855,
+      "precision": 0.2727272727272727
+    }
+  },
+  "confusions": [
+    {
+      "truth": "dress",
+      "predicted": "skirt",
+      "count": 15
+    },
+    {
+      "truth": "t-shirt",
+      "predicted": "dress",
+      "count": 12
+    },
+    {
+      "truth": "t-shirt",
+      "predicted": "skirt",
+      "count": 8
+    },
+    {
+      "truth": "t-shirt",
+      "predicted": "shorts",
+      "count": 6
+    },
+    {
+      "truth": "t-shirt",
+      "predicted": "sweater",
+      "count": 5
+    },
+    {
+      "truth": "dress",
+      "predicted": "coat",
+      "count": 5
+    },
+    {
+      "truth": "shorts",
+      "predicted": "jeans",
+      "count": 4
+    },
+    {
+      "truth": "t-shirt",
+      "predicted": "jacket",
+      "count": 4
+    },
+    {
+      "truth": "skirt",
+      "predicted": "dress",
+      "count": 4
+    },
+    {
+      "truth": "dress",
+      "predicted": "blazer",
+      "count": 4
+    },
+    {
+      "truth": "blazer",
+      "predicted": "jacket",
+      "count": 4
+    },
+    {
+      "truth": "jeans",
+      "predicted": "trousers",
+      "count": 4
+    },
+    {
+      "truth": "t-shirt",
+      "predicted": "hoodie",
+      "count": 4
+    },
+    {
+      "truth": "jacket",
+      "predicted": "skirt",
+      "count": 4
+    },
+    {
+      "truth": "trousers",
+      "predicted": "skirt",
+      "count": 3
+    },
+    {
+      "truth": "shirt",
+      "predicted": "blazer",
+      "count": 3
+    },
+    {
+      "truth": "t-shirt",
+      "predicted": "coat",
+      "count": 3
+    },
+    {
+      "truth": "shirt",
+      "predicted": "jeans",
+      "count": 3
+    },
+    {
+      "truth": "shirt",
+      "predicted": "coat",
+      "count": 3
+    },
+    {
+      "truth": "trousers",
+      "predicted": "dress",
+      "count": 3
+    }
+  ],
+  "materials_predicted": {
+    "polyester": 95,
+    "silk": 55,
+    "denim": 43,
+    "leather": 36,
+    "linen": 32,
+    "knit": 21,
+    "cotton": 13,
+    "wool": 5
+  },
+  "excluded": {
+    "not a whole garment (parts, accessories, footwear)": 6744,
+    "garment outside this ontology (vest, jumpsuit, cape)": 48,
+    "box smaller than 48px": 28
+  }
+}

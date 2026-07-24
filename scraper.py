@@ -121,6 +121,11 @@ FASHIONPEDIA_FILES = {
     "val_test2020.zip": "https://s3.amazonaws.com/ifashionist-dataset/images/val_test2020.zip",
 }
 
+# evaluate.py only reads these two, 240MB against the 3.4GB of the full set.
+# The training split is only worth downloading for fine-tuning, which this
+# project does not do on Fashionpedia images.
+FASHIONPEDIA_VAL_FILES = ["instances_attributes_val2020.json", "val_test2020.zip"]
+
 # ----------------------------------------------------------------------------
 # HELPERS
 # ----------------------------------------------------------------------------
@@ -319,26 +324,48 @@ def scrape_source(source_name: str, max_per_category: int):
 # DATASETS MODE (Fashionpedia direct download)
 # ----------------------------------------------------------------------------
 
-def download_datasets():
+def download_datasets(val_only: bool = False):
     out = DATA_DIR / "fashionpedia"
     out.mkdir(parents=True, exist_ok=True)
-    for fname, url in FASHIONPEDIA_FILES.items():
+    wanted = FASHIONPEDIA_VAL_FILES if val_only else FASHIONPEDIA_FILES
+    for fname in wanted:
+        url = FASHIONPEDIA_FILES[fname]
         dest = out / fname
         if dest.exists():
             print(f"exists, skipping: {fname}")
             continue
         print(f"downloading {fname} ...")
-        with session.get(url, stream=True, timeout=TIMEOUT) as r:
-            if r.status_code != 200:
-                print(f"  failed ({r.status_code}): {url}")
-                continue
-            total = int(r.headers.get("content-length", 0))
-            with dest.open("wb") as f, tqdm(
-                total=total, unit="B", unit_scale=True, desc=f"  {fname}"
-            ) as bar:
-                for chunk in r.iter_content(chunk_size=1 << 20):
-                    f.write(chunk)
-                    bar.update(len(chunk))
+        # .part first, and resumed on retry: these are large files and the
+        # connection drops often enough that restarting from zero is painful
+        part = dest.with_suffix(dest.suffix + ".part")
+        for attempt in range(1, MAX_RETRIES + 1):
+            have = part.stat().st_size if part.exists() else 0
+            headers = {"Range": f"bytes={have}-"} if have else {}
+            try:
+                with session.get(url, headers=headers, stream=True, timeout=TIMEOUT) as r:
+                    if r.status_code not in (200, 206):
+                        print(f"  failed ({r.status_code}): {url}")
+                        break
+                    if r.status_code == 200:
+                        have = 0  # server ignored the range, start over
+                    total = have + int(r.headers.get("content-length", 0))
+                    with part.open("ab" if have else "wb") as f, tqdm(
+                        total=total, initial=have, unit="B", unit_scale=True,
+                        desc=f"  {fname}"
+                    ) as bar:
+                        for chunk in r.iter_content(chunk_size=1 << 20):
+                            f.write(chunk)
+                            have += len(chunk)
+                            bar.update(len(chunk))
+                if total and have >= total:
+                    part.replace(dest)
+                    break
+                print(f"  truncated at {have}/{total}, resuming")
+            except requests.RequestException as e:
+                print(f"  {e}, retry {attempt}/{MAX_RETRIES}")
+                time.sleep(5 * attempt)
+        else:
+            print(f"  gave up on {fname}")
     print("\nUnzip the image archives, then annotations are COCO-format JSON.")
     print("DeepFashion2 needs a signed request form (Google Form on its GitHub"
           " repo, github.com/switchablenorms/DeepFashion2), so it can't be"
@@ -467,7 +494,9 @@ def main():
     parser = argparse.ArgumentParser(description="Clothing dataset builder")
     sub = parser.add_subparsers(dest="mode", required=True)
 
-    sub.add_parser("datasets", help="download Fashionpedia")
+    ds = sub.add_parser("datasets", help="download Fashionpedia")
+    ds.add_argument("--val-only", action="store_true",
+                    help="skip the 3.2GB training split, enough for evaluate.py")
 
     fm = sub.add_parser("fashion-mnist", help="download Zalando Fashion-MNIST from Kaggle")
     fm.add_argument("--export", action="store_true", help="also write PNG images")
@@ -484,7 +513,7 @@ def main():
     DATA_DIR.mkdir(exist_ok=True)
 
     if args.mode == "datasets":
-        download_datasets()
+        download_datasets(args.val_only)
     elif args.mode == "fashion-mnist":
         download_fashion_mnist()
         if args.export:

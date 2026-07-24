@@ -12,6 +12,8 @@ Graph shape:
 
 Plus a seeded ontology that no image touches:
   (Season {name, temp_range, warmth_min, warmth_max}) -[:COLDER_THAN]-> (Season)
+  (Dataset {name, license, usage}) -[:HAS_CLASS]-> (DatasetClass) -[:MAPS_TO]-> (Category)
+  (Garment) -[:FROM_DATASET]-> (Dataset)
 
 The Season nodes are what makes this a knowledge graph and not a table of tags:
 weather is never predicted by the model, it is derived by traversing from the
@@ -26,7 +28,10 @@ from contextlib import contextmanager
 from neo4j import GraphDatabase
 
 from config import (
+    ATTRIBUTES,
     CATEGORY_WARMTH,
+    DATASETS,
+    FASHION_MNIST_MAP,
     MATERIAL_WARMTH,
     NEO4J_PASSWORD,
     NEO4J_URI,
@@ -43,12 +48,21 @@ _REL = {
     "sleeve": ("HAS_SLEEVE", "Sleeve"),
 }
 
-_NODE_LABELS = ["Garment", "Category", "Material", "Style", "Color", "Sleeve", "Season"]
+_NODE_LABELS = [
+    "Garment", "Category", "Material", "Style", "Color", "Sleeve", "Season",
+    "Dataset", "DatasetClass",
+]
 
 
 @contextmanager
 def driver():
-    d = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
+    # notifications off: on an empty graph the server warns that HAS_CATEGORY
+    # and friends "do not exist" for every query, which is true and useless.
+    d = GraphDatabase.driver(
+        NEO4J_URI,
+        auth=(NEO4J_USER, NEO4J_PASSWORD),
+        notifications_min_severity="OFF",
+    )
     try:
         yield d
     finally:
@@ -130,16 +144,75 @@ def seed_ontology() -> None:
             pairs=pairs,
         )
 
+        # the label vocabulary CLIP chooses from, so the graph shows every
+        # possible answer and not only the ones some photo happened to hit
+        for group, node_label in (
+            ("style", "Style"), ("color", "Color"), ("sleeve", "Sleeve")
+        ):
+            s.run(
+                f"UNWIND $names AS n MERGE (x:{node_label} {{name: n}})",
+                names=ATTRIBUTES[group],
+            )
+
+        _seed_datasets(s)
+
+
+def _seed_datasets(s) -> None:
+    """
+    Where images may come from and what may be done with them (see scraper.py).
+
+    Each Fashion-MNIST class becomes a node linked to the Category it
+    corresponds to; the four classes with no counterpart (bags, three kinds of
+    footwear) stay unlinked on purpose -- that dangling edge is the honest
+    picture of how far the baseline dataset covers this ontology.
+    """
+    s.run(
+        """
+        UNWIND $rows AS row
+        MERGE (d:Dataset {name: row.name})
+        SET d.title = row.title, d.license = row.license, d.usage = row.usage,
+            d.source = row.source, d.images = row.images, d.note = row.note
+        """,
+        rows=DATASETS,
+    )
+
+    rows = [
+        {"key": f"fashion_mnist/{cls}", "cls": cls, "idx": i, "category": cat}
+        for i, (cls, cat) in enumerate(FASHION_MNIST_MAP.items())
+    ]
+    s.run(
+        """
+        MATCH (d:Dataset {name: 'fashion_mnist'})
+        UNWIND $rows AS row
+        MERGE (k:DatasetClass {name: row.key})
+        SET k.class_name = row.cls, k.label_id = row.idx, k.dataset = 'fashion_mnist'
+        MERGE (d)-[:HAS_CLASS]->(k)
+        """,
+        rows=rows,
+    )
+    s.run(
+        """
+        UNWIND [r IN $rows WHERE r.category IS NOT NULL] AS row
+        MATCH (k:DatasetClass {name: row.key})
+        MATCH (c:Category {name: row.category})
+        MERGE (k)-[:MAPS_TO]->(c)
+        """,
+        rows=rows,
+    )
+
 
 # ----------------------------------------------------------------------------
 # Garments
 # ----------------------------------------------------------------------------
 def save_garment(garment_id: str, image_path: str, tags: dict,
-                 warmth: int | None = None, layer: str | None = None) -> None:
+                 warmth: int | None = None, layer: str | None = None,
+                 dataset: str | None = None) -> None:
     """
     tags is the dict returned by classify(), e.g.
       {"category": {"label": "jeans", "confidence": 0.83}, ...}
     warmth/layer come from pipeline.weather and drive the season lookup.
+    dataset, when given, links the garment to its Dataset node so its licence
+    travels with it.
     """
     with driver() as d, d.session() as s:
         s.run(
@@ -149,6 +222,15 @@ def save_garment(garment_id: str, image_path: str, tags: dict,
             """,
             id=garment_id, path=image_path, warmth=warmth, layer=layer,
         )
+        if dataset:
+            s.run(
+                """
+                MATCH (g:Garment {id: $id})
+                MERGE (d:Dataset {name: $dataset})
+                MERGE (g)-[:FROM_DATASET]->(d)
+                """,
+                id=garment_id, dataset=dataset,
+            )
         for group, (rel, node_label) in _REL.items():
             if group not in tags:
                 continue
@@ -207,6 +289,21 @@ def find_by_attribute(group: str, value: str) -> list[str]:
             value=value,
         )
         return [row["id"] for row in rows]
+
+
+def stats() -> dict:
+    """Node counts per label and relationship counts per type, for `cli.py stats`."""
+    with driver() as d, d.session() as s:
+        nodes = s.run(
+            "MATCH (n) UNWIND labels(n) AS l "
+            "RETURN l AS label, count(*) AS n ORDER BY label"
+        )
+        nodes = {r["label"]: r["n"] for r in nodes}
+        rels = s.run(
+            "MATCH ()-[r]->() RETURN type(r) AS type, count(*) AS n ORDER BY type"
+        )
+        rels = {r["type"]: r["n"] for r in rels}
+    return {"nodes": nodes, "relationships": rels}
 
 
 def find_by_season(season: str) -> list[dict]:

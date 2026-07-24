@@ -11,14 +11,19 @@ from PIL import Image
 from rembg import remove
 
 
+def cut_out(image: Image.Image) -> Image.Image:
+    """
+    Strip the background of an image already in memory and return RGBA,
+    transparent where the background was. The evaluation crops garments out of
+    Fashionpedia photos, so it never has a path to hand over.
+    """
+    return remove(image.convert("RGBA"))
+
+
 def remove_background(image_path: str | Path) -> Image.Image:
-    """
-    Load an image, strip the background, return a PIL RGBA image
-    (transparent where the background was).
-    """
+    """Load an image from disk and strip its background."""
     with Image.open(image_path) as img:
-        cutout = remove(img.convert("RGBA"))
-    return cutout
+        return cut_out(img)
 
 
 def on_white(rgba: Image.Image) -> Image.Image:
