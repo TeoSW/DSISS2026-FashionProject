@@ -57,6 +57,10 @@ MIN_HEIGHT = 400
 DELAY_RANGE = (1.5, 4.0)  # seconds between requests, randomized
 TIMEOUT = 20
 MAX_RETRIES = 3
+# The dataset archives are gigabytes and take long enough that a flaky resolver
+# will interrupt them more than three times. They resume from the .part file,
+# so a retry costs nothing but the reconnect.
+DATASET_RETRIES = 20
 
 HEADERS = {
     "User-Agent": (
@@ -338,7 +342,7 @@ def download_datasets(val_only: bool = False):
         # .part first, and resumed on retry: these are large files and the
         # connection drops often enough that restarting from zero is painful
         part = dest.with_suffix(dest.suffix + ".part")
-        for attempt in range(1, MAX_RETRIES + 1):
+        for attempt in range(1, DATASET_RETRIES + 1):
             have = part.stat().st_size if part.exists() else 0
             headers = {"Range": f"bytes={have}-"} if have else {}
             try:
@@ -362,8 +366,9 @@ def download_datasets(val_only: bool = False):
                     break
                 print(f"  truncated at {have}/{total}, resuming")
             except requests.RequestException as e:
-                print(f"  {e}, retry {attempt}/{MAX_RETRIES}")
-                time.sleep(5 * attempt)
+                # the message carries a full stack of wrapped urllib3 exceptions
+                print(f"  retry {attempt}/{DATASET_RETRIES}: {str(e)[:90]}")
+                time.sleep(min(5 * attempt, 60))
         else:
             print(f"  gave up on {fname}")
     print("\nUnzip the image archives, then annotations are COCO-format JSON.")
