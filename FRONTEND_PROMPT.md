@@ -52,36 +52,51 @@ component.
 ```
 
 **`POST /analyze`** — `multipart/form-data` with `file` (the image), `save`
-(`"true"` or `"false"`), `cutout` (`"true"`).
+(`"true"` or `"false"`), `cutout` (`"true"`), and an optional `brand` string.
+
+One photo can hold several garments, so the response is a **list**. The cloth
+model segments upper / lower / full body and each region that carries something
+is analysed on its own.
 
 ```json
 {
-  "id": "6e942cce6f50",
-  "analysis_id": "1dc75ef49050",
-  "tags": {
-    "category": { "label": "t-shirt",       "confidence": 0.658 },
-    "material": { "label": "polyester",     "confidence": 0.718 },
-    "style":    { "label": "casual",        "confidence": 0.615 },
-    "color":    { "label": "blue",          "confidence": 1.0   },
-    "sleeve":   { "label": "short sleeves", "confidence": 0.996 }
-  },
-  "warmth": 3,
-  "layer": "base",
-  "seasons": [
-    { "name": "hot",  "temp_range": "above 25 C" },
-    { "name": "warm", "temp_range": "18-25 C"    }
-  ],
-  "summary": "blue polyester t-shirt, short sleeves",
-  "cutout": "data:image/png;base64,...",
-  "saved": true
+  "analysis_id": "a1b2c3d4e5f6",
+  "count": 2,
+  "brand": "Nike",
+  "garments": [
+    {
+      "analysis_id": "1dc75ef49050",
+      "id": "6e942cce6f50",
+      "region": "upper",
+      "tags": {
+        "category": { "label": "shirt",        "confidence": 0.522 },
+        "material": { "label": "silk",         "confidence": 0.675 },
+        "color":    { "label": "green",        "confidence": 0.993 },
+        "sleeve":   { "label": "short sleeves", "confidence": 0.963 }
+      },
+      "warmth": 4,
+      "layer": "base",
+      "seasons": [ { "name": "warm", "temp_range": "18-25 C" } ],
+      "summary": "green silk shirt, short sleeves",
+      "cutout": "data:image/png;base64,...",
+      "saved": false,
+      "coverage": 0.218,
+      "brand": "Nike",
+      "price": 77.0,
+      "price_estimate": { "tier": "premium", "known": true, "basis": "Nike is premium-tier; shirt base 35 €" }
+    }
+  ]
 }
 ```
 
-`id` is `null` and `saved` is `false` when `save` was false; `analysis_id` is
-always present and is the handle `/feedback` takes. `cutout` is the photo with
-its background removed, ready to drop straight into an `<img src>`. `warmth` is
-an integer from 1 to 11. `layer` is one of `base`, `mid`, `outer`, `bottom`,
-`full`.
+The top-level `analysis_id` identifies the whole upload; each garment has its
+**own** `analysis_id`, which is the handle `/feedback` takes for that garment.
+Per garment: `id` is `null` and `saved` is `false` when `save` was false;
+`region` is `upper` / `lower` / `full`; `cutout` is that garment's own
+background-removed image; `coverage` is how much of the frame it filled; `price`
+is `null` unless a brand was given, and `price_estimate` is present only when the
+price was guessed from the brand. Render each garment as its own result. When
+`count` is 1, it is still a list of one.
 
 Error responses are `{ "detail": "..." }` with status 400 (empty upload), 413
 (over 12MB), 415 (not a readable image) or 503 (database write failed). Show

@@ -47,3 +47,14 @@ export function Moon({ size = 17 }: { size?: number }) {
     </svg>
   );
 }
+
+export function Wash({ size = 13 }: { size?: number }) {
+  // a laundry tub, the way a care label draws one
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base} aria-hidden="true">
+      <path d="M3 8.5 5 5h14l2 3.5" />
+      <path d="M3 8.5h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+      <path d="M6.5 13c1 -1 2.5 -1 3.5 0s2.5 1 3.5 0 2.5 -1 3.5 0" />
+    </svg>
+  );
+}

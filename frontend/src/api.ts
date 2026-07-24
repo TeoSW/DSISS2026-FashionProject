@@ -1,5 +1,6 @@
 import type {
   Analysis,
+  DetailsResult,
   FeedbackResult,
   FeedbackStats,
   GarmentQuery,
@@ -7,6 +8,9 @@ import type {
   Health,
   Insights,
   Ontology,
+  Preferences,
+  Recommendation,
+  WardrobeProfile,
   WardrobeResponse,
 } from "./types";
 
@@ -57,11 +61,16 @@ export const graphStats = (signal?: AbortSignal) => get<GraphStats>("/stats", si
 export const feedbackStats = (signal?: AbortSignal) =>
   get<FeedbackStats>("/feedback/stats", signal);
 
-export async function analyze(file: File, save: boolean): Promise<Analysis> {
+export async function analyze(
+  file: File,
+  save: boolean,
+  brand?: string
+): Promise<Analysis> {
   const form = new FormData();
   form.append("file", file);
   form.append("save", String(save));
   form.append("cutout", "true");
+  if (brand && brand.trim()) form.append("brand", brand.trim());
   return unwrap<Analysis>(
     await fetch(`${BASE}/analyze`, { method: "POST", body: form })
   );
@@ -106,5 +115,43 @@ export const photoUrl = (path: string) => `${BASE}${path}`;
 export async function deleteGarment(id: string): Promise<{ deleted: string }> {
   return unwrap<{ deleted: string }>(
     await fetch(`${BASE}/garments/${encodeURIComponent(id)}`, { method: "DELETE" })
+  );
+}
+
+export const wardrobeProfile = (signal?: AbortSignal) =>
+  get<WardrobeProfile>("/wardrobe/profile", signal);
+
+export const recommend = (season?: string | null, signal?: AbortSignal) =>
+  get<Recommendation>(`/recommend${season ? `?season=${encodeURIComponent(season)}` : ""}`, signal);
+
+export const preferences = (signal?: AbortSignal) =>
+  get<Preferences>("/preferences", signal);
+
+export async function putPreferences(body: Partial<Preferences>): Promise<Preferences> {
+  return unwrap<Preferences>(
+    await fetch(`${BASE}/preferences`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
+export async function setDetails(
+  id: string,
+  body: {
+    price?: number | null;
+    clear_price?: boolean;
+    wash_temp?: number | null;
+    wash_cycle?: string | null;
+    wash_note?: string | null;
+  }
+): Promise<DetailsResult> {
+  return unwrap<DetailsResult>(
+    await fetch(`${BASE}/garments/${encodeURIComponent(id)}/details`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
   );
 }

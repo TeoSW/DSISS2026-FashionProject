@@ -31,12 +31,16 @@ from config import (
     ATTRIBUTES,
     CATEGORY_WARMTH,
     CLIP_MODEL,
+    CURRENCY,
+    CURRENCY_SYMBOL,
     MATERIAL_WARMTH,
     SEASONS,
     SLEEVE_MODIFIER,
+    WASH_CARE,
 )
+from pipeline import closet
 from pipeline import feedback as fb
-from pipeline import graph, photos, weather
+from pipeline import graph, photos, prefs, weather
 
 MAX_UPLOAD = 12 * 1024 * 1024  # a phone photo is 3-8MB; past 12 something is wrong
 
@@ -62,16 +66,29 @@ class Tag(BaseModel):
     confidence: float
 
 
-class Analysis(BaseModel):
-    id: str | None
-    analysis_id: str
+class GarmentResult(BaseModel):
+    analysis_id: str            # per-garment handle, what /feedback takes
+    id: str | None              # graph id, null unless saved
+    region: str                 # which body part the cloth model cut it from
     tags: dict[str, Tag]
     warmth: int
     layer: str
     seasons: list[dict]
     summary: str
-    cutout: str | None  # data URI of the background-removed image
+    cutout: str | None          # data URI of this garment's cutout
     saved: bool
+    coverage: float             # share of the frame this garment covered
+    brand: str | None
+    price: float | None
+    price_estimate: dict | None  # {tier, known, basis} when a price was guessed
+
+
+class Analysis(BaseModel):
+    """One upload. One photo can hold several garments, so this is a list."""
+    analysis_id: str            # a handle for the whole upload
+    count: int
+    brand: str | None
+    garments: list[GarmentResult]
 
 
 class Feedback(BaseModel):
@@ -99,6 +116,24 @@ class FeedbackResult(BaseModel):
     corpus_size: int
 
 
+class Details(BaseModel):
+    """The two things only the owner of the garment knows."""
+    price: float | None = Field(None, description=f"what it cost, in {CURRENCY}")
+    clear_price: bool = Field(False, description="remove the stored price")
+    wash_temp: int | None = Field(None, description="wash temperature in C")
+    wash_cycle: str | None = None
+    wash_note: str | None = None
+
+
+class Preferences(BaseModel):
+    preferred_styles: list[str] | None = None
+    preferred_colors: list[str] | None = None
+    disliked_colors: list[str] | None = None
+    home_season: str | None = None
+    runs_cold: bool | None = None
+    runs_warm: bool | None = None
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     print(f"model {CLIP_MODEL} loads on the first /analyze call")
@@ -119,7 +154,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -177,14 +212,18 @@ def ontology():
         "category_warmth": {k: {"warmth": w, "layer": l}
                             for k, (w, l) in CATEGORY_WARMTH.items()},
         "sleeve_modifier": SLEEVE_MODIFIER,
+        "wash_care": WASH_CARE,
+        "currency": CURRENCY,
+        "currency_symbol": CURRENCY_SYMBOL,
     }
 
 
 @app.post("/analyze", response_model=Analysis)
 async def analyze(
-    file: UploadFile = File(..., description="a photo of one garment"),
+    file: UploadFile = File(..., description="a photo of one or more garments"),
     save: bool = Form(False, description="store the result in the knowledge graph"),
     cutout: bool = Form(True, description="return the background-removed image"),
+    brand: str = Form("", description="optional brand tag, used to estimate a price"),
 ):
     raw = await file.read()
     if not raw:
@@ -200,52 +239,67 @@ async def analyze(
 
     # imported here, not at module level: the first import pulls in torch and
     # rembg, and /health should answer before that finishes
-    from pipeline import classify, remove_bg
+    from pipeline import classify, pricing, remove_bg
 
-    rgba = remove_bg.cut_out(image)
-    rgb = remove_bg.on_white(rgba)
+    brand = brand.strip() or None
+    # one photo, possibly several garments: the cloth model segments upper /
+    # lower / full body, and each region that carries something is analysed on
+    # its own rather than being smeared into a single confused reading
+    pieces = remove_bg.segment_garments(image)
+    upload_id = uuid.uuid4().hex[:12]
 
-    tags = classify.classify(rgb)
-    score = weather.warmth_score(tags)
-    layer = weather.layer_of(tags)
+    results: list[GarmentResult] = []
+    for piece in pieces:
+        rgba = piece["cutout"]
+        rgb = remove_bg.on_white(rgba)
+        tags = classify.classify(rgb)
+        score = weather.warmth_score(tags)
+        layer = weather.layer_of(tags)
+        category = tags.get("category", {}).get("label")
+        est_price, est_info = pricing.estimate(brand, category)
 
-    garment_id, saved = None, False
-    seasons = weather.seasons_for(score)
-    if save:
-        garment_id = uuid.uuid4().hex[:12]
-        try:
-            # the picture is written first: a Garment node whose photo is
-            # missing shows an empty frame in the wardrobe, which is worse than
-            # not having stored it at all
-            photo = photos.save(garment_id, rgba)
-            graph.save_garment(garment_id, file.filename or "upload", tags,
-                               warmth=score, layer=layer, photo=photo)
-            # asked of the graph, not of the model
-            from_graph = graph.infer_weather(garment_id)
-            if from_graph:
-                seasons = from_graph
-            saved = True
-        except Exception as e:
-            # a dead database must not lose the user their analysis
-            photos.delete(garment_id)
-            raise HTTPException(503, f"analysed fine, but the graph write failed: {e}")
+        garment_id, saved = None, False
+        seasons = weather.seasons_for(score)
+        if save:
+            garment_id = uuid.uuid4().hex[:12]
+            try:
+                photo = photos.save(garment_id, rgba)
+                graph.save_garment(
+                    garment_id, file.filename or "upload", tags,
+                    warmth=score, layer=layer, photo=photo, brand=brand,
+                    price=est_price, price_source="estimated" if est_price else None,
+                    region=piece["region"],
+                )
+                from_graph = graph.infer_weather(garment_id)
+                if from_graph:
+                    seasons = from_graph
+                saved = True
+            except Exception as e:
+                photos.delete(garment_id)
+                raise HTTPException(503, f"analysed fine, but the graph write failed: {e}")
 
-    # every analysis gets a handle, saved or not, so it can be corrected;
-    # `id` stays the graph's id and is null when nothing was written there
-    analysis_id = uuid.uuid4().hex[:12]
-    _remember(analysis_id, rgb, rgba, tags, garment_id, file.filename or "upload")
+        analysis_id = uuid.uuid4().hex[:12]
+        _remember(analysis_id, rgb, rgba, tags, garment_id, file.filename or "upload")
 
-    return Analysis(
-        id=garment_id,
-        analysis_id=analysis_id,
-        tags={k: Tag(**v) for k, v in tags.items()},
-        warmth=score,
-        layer=layer,
-        seasons=seasons,
-        summary=_summary(tags),
-        cutout=_data_uri(rgba) if cutout else None,
-        saved=saved,
-    )
+        results.append(GarmentResult(
+            analysis_id=analysis_id,
+            id=garment_id,
+            region=piece["region"],
+            tags={k: Tag(**v) for k, v in tags.items()},
+            warmth=score,
+            layer=layer,
+            seasons=seasons,
+            summary=_summary(tags),
+            cutout=_data_uri(rgba) if cutout else None,
+            saved=saved,
+            coverage=piece["coverage"],
+            brand=brand,
+            price=est_price,
+            price_estimate=est_info if est_price is not None else None,
+        ))
+
+    return Analysis(analysis_id=upload_id, count=len(results),
+                    brand=brand, garments=results)
 
 
 @app.post("/feedback", response_model=FeedbackResult)
@@ -407,12 +461,94 @@ def wardrobe(region: str | None = None):
     items = graph.wardrobe(region)
     for item in items:
         item["photo_url"] = f"/garments/{item['id']}/image" if item.get("photo") else None
+        item["wash"] = closet.wash_for(item)
     return {
         "region": region,
         "regions": graph.region_counts(),
         "count": len(items),
         "items": items,
     }
+
+
+def _enriched_wardrobe() -> list[dict]:
+    """The whole wardrobe with the derived fields the closet logic needs."""
+    items = graph.wardrobe(None)
+    for item in items:
+        item["photo_url"] = f"/garments/{item['id']}/image" if item.get("photo") else None
+        item["wash"] = closet.wash_for(item)
+    return items
+
+
+@app.get("/wardrobe/profile")
+def wardrobe_profile():
+    """
+    What this wardrobe is, as a whole: the styles and colours it leans on, how
+    it splits across the body, what it is worth, which seasons it can dress for
+    and which it cannot. This is about one person's own clothes, not about the
+    model; accuracy is not on this page and does not belong on it.
+    """
+    return {"currency": CURRENCY, "currency_symbol": CURRENCY_SYMBOL,
+            **closet.profile(_enriched_wardrobe())}
+
+
+@app.get("/recommend")
+def recommend(season: str | None = None):
+    """
+    Assemble one outfit for the weather from what the person owns, tilted toward
+    their stated taste. A greedy per-slot heuristic, not a learned model; it is
+    honest about what it cannot cover rather than padding the outfit out.
+    """
+    if season and season not in {s["name"] for s in SEASONS}:
+        raise HTTPException(400, f"unknown season '{season}'")
+    return {"currency": CURRENCY, "currency_symbol": CURRENCY_SYMBOL,
+            "preferences": prefs.load(),
+            **closet.recommend(_enriched_wardrobe(), prefs.load(), season)}
+
+
+@app.get("/preferences")
+def get_preferences():
+    """The single person's stated taste. Used to break ties, never to hide clothes."""
+    return prefs.load()
+
+
+@app.put("/preferences")
+def put_preferences(body: Preferences):
+    """Update taste. Colours and styles are validated against the ontology."""
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
+    for field in ("preferred_colors", "disliked_colors"):
+        for c in update.get(field, []):
+            if c not in ATTRIBUTES["color"]:
+                raise HTTPException(400, f"'{c}' is not a colour this system knows")
+    for st in update.get("preferred_styles", []):
+        if st not in ATTRIBUTES["style"]:
+            raise HTTPException(400, f"'{st}' is not a style this system knows")
+    if update.get("home_season") and update["home_season"] not in {s["name"] for s in SEASONS}:
+        raise HTTPException(400, "unknown home_season")
+    return prefs.save(update)
+
+
+@app.put("/garments/{garment_id}/details")
+def set_details(garment_id: str, body: Details):
+    """
+    Set what the owner knows and the model cannot see: the price, and how the
+    garment is actually washed. Returns the garment's refreshed wash card, which
+    now reflects the override.
+    """
+    if body.price is not None and body.price < 0:
+        raise HTTPException(400, "a price cannot be negative")
+    if body.wash_temp is not None and not (0 <= body.wash_temp <= 95):
+        raise HTTPException(400, "wash temperature should be between 0 and 95 C")
+
+    found = graph.set_details(
+        garment_id, price=body.price, clear_price=body.clear_price,
+        wash_temp=body.wash_temp, wash_cycle=body.wash_cycle, wash_note=body.wash_note,
+    )
+    if not found:
+        raise HTTPException(404, "no garment with that id")
+
+    item = next((i for i in graph.wardrobe(None) if i["id"] == garment_id), None)
+    return {"id": garment_id, "price": item.get("price") if item else None,
+            "wash": closet.wash_for(item) if item else None}
 
 
 @app.get("/garments/{garment_id}/image")

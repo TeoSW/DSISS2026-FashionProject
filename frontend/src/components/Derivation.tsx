@@ -1,4 +1,4 @@
-import type { Analysis, Ontology } from "../types";
+import type { GarmentResult, Ontology } from "../types";
 
 /**
  * Why this garment got that weather.
@@ -18,7 +18,7 @@ export default function Derivation({
   analysis,
   ontology,
 }: {
-  analysis: Analysis;
+  analysis: GarmentResult;
   ontology: Ontology;
 }) {
   const material = analysis.tags.material?.label ?? "";

@@ -9,6 +9,8 @@ interface Props {
   busy: boolean;
   save: boolean;
   canSave: boolean;
+  brand: string;
+  onBrandChange: (brand: string) => void;
   onPick: (file: File | null, rejection?: string) => void;
   onSaveChange: (save: boolean) => void;
   onAnalyse: () => void;
@@ -26,6 +28,8 @@ export default function Specimen({
   busy,
   save,
   canSave,
+  brand,
+  onBrandChange,
   onPick,
   onSaveChange,
   onAnalyse,
@@ -121,6 +125,19 @@ export default function Specimen({
           }}
         />
       </div>
+
+      <label className="brand-field">
+        <span>
+          brand <em>optional</em>
+        </span>
+        <input
+          type="text"
+          value={brand}
+          placeholder="e.g. Zara, Nike, Gucci — used to estimate a price"
+          disabled={disabled}
+          onChange={(e) => onBrandChange(e.target.value)}
+        />
+      </label>
 
       <div className="controls">
         <label className="check" data-disabled={!canSave}>

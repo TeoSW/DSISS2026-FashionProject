@@ -187,6 +187,92 @@ SEASONS = [
     {"name": "freezing", "temp_range": "below 0 C",  "warmth_min": 10, "warmth_max": 11},
 ]
 
+# What a person actually has to put on to leave the house in each season. A
+# wardrobe with ten t-shirts and no coat is not ready for winter, and this is
+# the table that lets the gap analysis say so: for every season, which body
+# regions must be covered and whether an insulating outer layer is required.
+# `min_outer_warmth` is the category-warmth an outer piece has to reach to count
+# (a jacket is 4, a coat is 5), so a denim jacket does not tick the freezing box.
+SEASON_ESSENTIALS = {
+    "hot":      {"regions": ["upper", "lower"], "outer": False, "min_outer_warmth": 0},
+    "warm":     {"regions": ["upper", "lower"], "outer": False, "min_outer_warmth": 0},
+    "mild":     {"regions": ["upper", "lower"], "outer": True,  "min_outer_warmth": 4},
+    "cold":     {"regions": ["upper", "lower"], "outer": True,  "min_outer_warmth": 4},
+    "freezing": {"regions": ["upper", "lower"], "outer": True,  "min_outer_warmth": 5},
+}
+
+# ----------------------------------------------------------------------------
+# Care: when and how to wash, derived from the fibre
+#
+# The model reads the material off the photo; the care instruction that follows
+# from it is knowledge, the same shape as the warmth table. These are the
+# conservative version of what a garment's care label would say, and every one
+# of them can be overridden per garment by the person who owns the thing and
+# knows better than a fibre-name lookup. temp_c is None when the answer is
+# "not in a washing machine at all".
+# ----------------------------------------------------------------------------
+WASH_CARE = {
+    "wool":      {"temp_c": 30, "cycle": "wool / hand wash", "note": "reshape and dry flat; heat and agitation felt wool"},
+    "silk":      {"temp_c": 30, "cycle": "delicate / hand wash", "note": "mild detergent, do not wring"},
+    "linen":     {"temp_c": 40, "cycle": "normal", "note": "wash with like colours, iron while damp"},
+    "cotton":    {"temp_c": 40, "cycle": "normal", "note": "colours 30-40, whites tolerate 60"},
+    "denim":     {"temp_c": 30, "cycle": "normal, inside out", "note": "cold and inside out keeps the indigo"},
+    "leather":   {"temp_c": None, "cycle": "do not machine wash", "note": "wipe clean or specialist leather care only"},
+    "polyester": {"temp_c": 40, "cycle": "normal", "note": "low heat; synthetics melt on a hot wash or dryer"},
+    "knit":      {"temp_c": 30, "cycle": "delicate", "note": "wash inside out and dry flat to hold the shape"},
+}
+
+# When the material is unknown or has no entry, this is the answer that will not
+# ruin anything: cool and gentle.
+DEFAULT_WASH = {"temp_c": 30, "cycle": "delicate",
+                "note": "no material was detected; 30 C on a delicate cycle is the safe default"}
+
+# The product is priced and valued in one currency. The user picks it; nothing
+# converts, because a wardrobe is not a trading desk.
+CURRENCY = os.getenv("CURRENCY", "EUR")
+CURRENCY_SYMBOL = {"EUR": "€", "RON": "lei", "USD": "$", "GBP": "£"}.get(CURRENCY, CURRENCY)
+
+# ----------------------------------------------------------------------------
+# Brand -> a price estimate
+#
+# A brand tag is the one cheap signal for what a garment cost, so the upload
+# accepts one and the system turns it into a rough figure: a per-category base
+# price scaled by the brand's market tier. This is an ESTIMATE and is labelled as
+# one everywhere it appears; a real price needs a live product feed, which this
+# project does not have and does not pretend to. The owner corrects it in one
+# tap, and their number replaces the guess.
+#
+# The lists are short and Europe-leaning on purpose. An unknown brand is treated
+# as mid-range and said to be a guess, rather than refused.
+# ----------------------------------------------------------------------------
+BRAND_TIERS = {
+    "primark": "budget", "shein": "budget", "kik": "budget", "pepco": "budget",
+    "c&a": "budget", "lc waikiki": "budget", "sinsay": "budget",
+    "h&m": "budget", "hm": "budget",
+    "zara": "mid", "mango": "mid", "uniqlo": "mid", "gap": "mid", "next": "mid",
+    "bershka": "mid", "pull&bear": "mid", "stradivarius": "mid", "reserved": "mid",
+    "s.oliver": "mid", "esprit": "mid", "levi's": "mid", "levis": "mid",
+    "nike": "premium", "adidas": "premium", "puma": "premium", "lacoste": "premium",
+    "the north face": "premium", "calvin klein": "premium", "tommy hilfiger": "premium",
+    "hugo boss": "premium", "boss": "premium", "ralph lauren": "premium",
+    "diesel": "premium", "guess": "premium", "superdry": "premium",
+    "gucci": "luxury", "prada": "luxury", "burberry": "luxury", "balenciaga": "luxury",
+    "louis vuitton": "luxury", "dior": "luxury", "moncler": "luxury", "versace": "luxury",
+    "armani": "luxury", "saint laurent": "luxury", "fendi": "luxury", "valentino": "luxury",
+}
+
+# how far each tier moves the base price
+TIER_MULTIPLIER = {"budget": 0.55, "mid": 1.0, "premium": 2.2, "luxury": 7.0}
+
+# a typical mid-tier retail price in EUR per category: the base the multiplier
+# scales. Rough, and only ever a starting point the owner overrides.
+CATEGORY_BASE_PRICE = {
+    "t-shirt": 20, "shirt": 35, "sweater": 45, "hoodie": 45, "blazer": 80,
+    "jacket": 90, "coat": 130, "dress": 60, "skirt": 40, "jeans": 60,
+    "trousers": 50, "shorts": 30,
+}
+DEFAULT_BASE_PRICE = 40
+
 # ----------------------------------------------------------------------------
 # Dataset provenance -> the licensing story, expressed as data
 #

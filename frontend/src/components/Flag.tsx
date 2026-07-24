@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ApiError, sendFeedback } from "../api";
-import type { Analysis, FeedbackResult, Ontology } from "../types";
+import type { FeedbackResult, GarmentResult, Ontology } from "../types";
 import { GROUPS } from "../types";
 
 /**
@@ -21,7 +21,7 @@ export default function Flag({
   ontology,
   onApplied,
 }: {
-  analysis: Analysis;
+  analysis: GarmentResult;
   ontology: Ontology | null;
   onApplied: (result: FeedbackResult) => void;
 }) {

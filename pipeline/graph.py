@@ -235,13 +235,18 @@ def _seed_datasets(s) -> None:
 def save_garment(garment_id: str, image_path: str, tags: dict,
                  warmth: int | None = None, layer: str | None = None,
                  dataset: str | None = None, photo: str | None = None,
-                 source: str = "model") -> None:
+                 source: str = "model", brand: str | None = None,
+                 price: float | None = None, price_source: str | None = None,
+                 region: str | None = None) -> None:
     """
     tags is the dict returned by classify(), e.g.
       {"category": {"label": "jeans", "confidence": 0.83}, ...}
     warmth/layer come from pipeline.weather and drive the season lookup.
     dataset, when given, links the garment to its Dataset node so its licence
-    travels with it. photo is where pipeline.photos wrote the cutout.
+    travels with it. photo is where pipeline.photos wrote the cutout. brand and
+    price are what the upload/estimate knew; price_source records whether the
+    price was estimated from the brand or set by a person. region is which body
+    part the cloth model cut this garment from, kept for the record.
 
     created_at is set ON CREATE only: re-saving a garment must not make it look
     newly added, or the wardrobe reorders itself for no reason.
@@ -252,11 +257,21 @@ def save_garment(garment_id: str, image_path: str, tags: dict,
             MERGE (g:Garment {id: $id})
             ON CREATE SET g.created_at = datetime()
             SET g.image_path = $path, g.warmth = $warmth, g.layer = $layer,
-                g.photo = $photo, g.source = $source
+                g.photo = $photo, g.source = $source, g.brand = $brand,
+                g.detected_region = $region
             """,
             id=garment_id, path=image_path, warmth=warmth, layer=layer,
-            photo=photo, source=source,
+            photo=photo, source=source, brand=brand, region=region,
         )
+        if price is not None:
+            s.run(
+                """
+                MATCH (g:Garment {id: $id})
+                SET g.price = $price, g.price_source = $price_source
+                """,
+                id=garment_id, price=float(price),
+                price_source=price_source or "estimated",
+            )
         if dataset:
             s.run(
                 """
@@ -379,6 +394,12 @@ def wardrobe(region: str | None = None) -> list[dict]:
                    g.photo AS photo,
                    g.image_path AS image_path,
                    toString(g.created_at) AS created_at,
+                   g.price AS price,
+                   g.price_source AS price_source,
+                   g.brand AS brand,
+                   g.wash_temp AS wash_temp,
+                   g.wash_cycle AS wash_cycle,
+                   g.wash_note AS wash_note,
                    c.name AS category,
                    coalesce(r.name, 'unplaced') AS region,
                    m.name AS material,
@@ -422,6 +443,54 @@ def region_counts() -> dict:
     if loose:
         counts["unplaced"] = loose
     return counts
+
+
+def set_details(garment_id: str, price: float | None = None,
+                wash_temp: int | None = None, wash_cycle: str | None = None,
+                wash_note: str | None = None, clear_price: bool = False) -> bool:
+    """
+    Write the two things only the owner knows: what the garment cost, and how
+    they actually wash it.
+
+    These are facts about the physical object, not predictions, so they live on
+    the Garment node with no confidence and no source='model'. Every argument is
+    optional and only the ones passed are touched, so setting a price does not
+    wipe a wash override and the reverse. clear_price removes the price outright,
+    which "leave it None" cannot express.
+
+    Returns False when there is no such garment, so the API can answer 404.
+    """
+    sets, params = [], {"id": garment_id}
+    if clear_price:
+        sets.append("g.price = null")
+        sets.append("g.price_source = null")
+    elif price is not None:
+        sets.append("g.price = $price")
+        sets.append("g.price_source = 'you'")
+        params["price"] = float(price)
+    if wash_temp is not None:
+        sets.append("g.wash_temp = $wash_temp")
+        params["wash_temp"] = int(wash_temp)
+    if wash_cycle is not None:
+        sets.append("g.wash_cycle = $wash_cycle")
+        params["wash_cycle"] = wash_cycle
+    if wash_note is not None:
+        sets.append("g.wash_note = $wash_note")
+        params["wash_note"] = wash_note
+
+    if not sets:
+        # nothing to change, but still report whether the garment exists
+        with driver() as d, d.session() as s:
+            n = s.run("MATCH (g:Garment {id: $id}) RETURN count(g) AS n",
+                      id=garment_id).single()["n"]
+        return n > 0
+
+    with driver() as d, d.session() as s:
+        n = s.run(
+            f"MATCH (g:Garment {{id: $id}}) SET {', '.join(sets)} RETURN count(g) AS n",
+            **params,
+        ).single()["n"]
+    return n > 0
 
 
 def delete_garment(garment_id: str) -> bool:

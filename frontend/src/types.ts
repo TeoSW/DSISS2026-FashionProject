@@ -19,9 +19,19 @@ export interface Season {
   score?: number;
 }
 
-export interface Analysis {
-  id: string | null;
+export interface PriceEstimate {
+  brand: string | null;
+  tier: string | null;
+  known: boolean;
+  basis: string;
+}
+
+// One garment. A single photo can contain several, so /analyze returns a list
+// of these; each carries its own correctable handle.
+export interface GarmentResult {
   analysis_id: string;
+  id: string | null;
+  region: string;
   tags: Record<string, Tag>;
   warmth: number;
   layer: string;
@@ -29,6 +39,18 @@ export interface Analysis {
   summary: string;
   cutout: string | null;
   saved: boolean;
+  coverage: number;
+  brand: string | null;
+  price: number | null;
+  price_estimate: PriceEstimate | null;
+}
+
+// The whole upload: what /analyze returns.
+export interface Analysis {
+  analysis_id: string;
+  count: number;
+  brand: string | null;
+  garments: GarmentResult[];
 }
 
 export interface Health {
@@ -37,12 +59,22 @@ export interface Health {
   neo4j: boolean;
 }
 
+export interface WashCare {
+  temp_c: number | null;
+  cycle: string;
+  note: string;
+  source?: string;
+}
+
 export interface Ontology {
   attributes: Record<string, string[]>;
   seasons: Season[];
   material_warmth: Record<string, number>;
   category_warmth: Record<string, { warmth: number; layer: string }>;
   sleeve_modifier: Record<string, number>;
+  wash_care: Record<string, WashCare>;
+  currency: string;
+  currency_symbol: string;
 }
 
 export interface FeedbackResult {
@@ -80,6 +112,13 @@ export interface WardrobeItem {
   corrected: boolean;
   seasons: { name: string; temp_range: string }[];
   photo_url: string | null;
+  price: number | null;
+  price_source: string | null;
+  brand: string | null;
+  wash: WashCare | null;
+  wash_temp: number | null;
+  wash_cycle: string | null;
+  wash_note: string | null;
 }
 
 export interface WardrobeResponse {
@@ -163,4 +202,87 @@ export interface GarmentQuery {
 export interface GraphStats {
   nodes: Record<string, number>;
   relationships: Record<string, number>;
+}
+
+export interface Preferences {
+  preferred_styles: string[];
+  preferred_colors: string[];
+  disliked_colors: string[];
+  home_season: string;
+  runs_cold: boolean;
+  runs_warm: boolean;
+}
+
+export interface OutfitPiece {
+  id: string;
+  category: string | null;
+  color: string | null;
+  material?: string | null;
+  layer?: string | null;
+  warmth?: number | null;
+  price: number | null;
+  photo_url: string | null;
+}
+
+export interface Recommendation {
+  currency: string;
+  currency_symbol: string;
+  preferences: Preferences;
+  season: string;
+  temp_range: string;
+  target_warmth: number;
+  outfit: OutfitPiece[];
+  reasons: string[];
+  outfit_warmth: number | null;
+  missing: string[];
+  complete: boolean;
+}
+
+export interface OutfitValue {
+  total: number;
+  pieces: OutfitPiece[];
+}
+
+export interface WardrobeValue {
+  total_value: number;
+  priced: number;
+  unpriced: number;
+  most_valuable_outfit: OutfitValue | null;
+  least_valuable_outfit: OutfitValue | null;
+  most_valuable_item: OutfitPiece | null;
+}
+
+export interface Gap {
+  season: string;
+  temp_range: string;
+  fitting: number;
+  ready: boolean;
+  missing: string[];
+}
+
+export interface WardrobeProfile {
+  currency: string;
+  currency_symbol: string;
+  count: number;
+  dominant_style: string | null;
+  dominant_color: string | null;
+  styles: Tally[];
+  colors: Tally[];
+  materials: Tally[];
+  regions: Tally[];
+  value: WardrobeValue;
+  coverage: { name: string; temp_range: string; n: number }[];
+  gaps: Gap[];
+}
+
+export interface DetailsResult {
+  id: string;
+  price: number | null;
+  wash: WashCare | null;
+}
+
+export interface ShopLink {
+  retailer: string;
+  url: string;
+  note?: string;
 }
