@@ -158,6 +158,7 @@ python evaluate.py --no-aliases          # only the 12 ontology labels
 python evaluate.py --prompt-ensemble     # average the six templates
 python evaluate.py --two-stage mass      # region first, then category
 python evaluate.py --remove-bg           # with the rembg step
+python evaluate.py --split dev           # the half you are allowed to tune on
 ```
 
 Fashionpedia annotates every garment in a photo with a box and a category. Each
@@ -348,6 +349,56 @@ Macro F1 is the honest headline for a set this unbalanced, since `dress` and
 The floor is now the outerwear: `jacket` and `coat` sit at 0.48 and 0.49 F1.
 Those two differ mostly by length, in a box that often cuts the hem off.
 
+### The dev / test split, frozen before fine-tuning
+
+```bash
+python make_split.py                 # once, writes splits/fashionpedia_val.json
+python make_split.py --show          # print it
+python evaluate.py --split dev       # while you are still making choices
+python evaluate.py --split test      # once, at the end
+```
+
+Every number above was measured on all 1961 instances, which was fine while the
+only decisions were a checkpoint and a word list. It stops being fine the moment
+fine-tuning starts: a score you have optimised against is not an estimate of
+anything. So the validation set is cut in two and half of it is put away.
+
+| | images | garments |
+|---|---|---|
+| dev | 684 | 1177 |
+| test | 458 | 784 |
+
+The unit is the image, not the garment. Fashionpedia photos carry several
+annotated garments each, and two crops of the same photo share the person, the
+lighting and usually the outfit; splitting by instance would put near-duplicates
+on both sides and inflate the test score.
+
+The assignment is stratified and greedy rather than random, because `hoodie` has
+seven instances in the whole set and a coin flip can leave one side with none.
+Images go one at a time to whichever side is furthest below its quota for the
+rarest class they contain. Every class lands within 0.6 points of the 60% target,
+`hoodie` included, at 4 against 3.
+
+The same pipeline, unchanged, scores:
+
+| | top-1 | top-3 | macro F1 |
+|---|---|---|---|
+| dev | 63.2% | 87.9% | 0.560 |
+| test | 63.5% | 89.0% | 0.557 |
+| all 1961 | 63.3% | 88.4% | 0.557 |
+
+The halves agree to within 0.3 points, which is the evidence that the split is
+representative rather than a lucky cut.
+
+**What this does not fix.** The zero-shot configuration was already chosen by
+looking at all 1961 instances, so the test half is not clean with respect to the
+checkpoint and the vocabulary. It is clean from here on, which is what
+fine-tuning needs. The thesis should say exactly that rather than implying a
+purity these numbers do not have.
+
+`make_split.py` refuses to overwrite an existing split, because a split is only
+worth anything if it never moves.
+
 What remains of the `t-shirt` error is the mapping, and belongs in the caveats
 rather than in the model's column. Fashionpedia's class 1 is "top, t-shirt,
 sweatshirt", one label for a tank top, a crop top and a sweatshirt, all scored
@@ -449,7 +500,9 @@ project predicts.
 scraper.py           dataset downloader / scraper (existing)
 cli.py               command-line entry point
 evaluate.py          CLIP vs Fashionpedia, the thesis metric
+make_split.py        freezes the dev/test split, once
 results/             every evaluation run, versioned (data/ is not)
+splits/              the frozen dev/test assignment
 config.py            Neo4j creds + CLIP model + labels + warmth + dataset tables
 pipeline/
   remove_bg.py       rembg background removal

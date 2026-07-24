@@ -47,6 +47,7 @@ from config import (
 DATA = Path("data/fashionpedia")
 ANNOTATIONS = DATA / "instances_attributes_val2020.json"
 IMAGES_ZIP = DATA / "val_test2020.zip"
+SPLIT_FILE = Path("splits/fashionpedia_val.json")
 
 # A box smaller than this is a thumbnail of a sleeve, not a photo of a garment.
 MIN_BOX = 48
@@ -65,7 +66,14 @@ def load_annotations() -> dict:
     return json.loads(ANNOTATIONS.read_text(encoding="utf-8"))
 
 
-def build_tasks(data: dict, limit: int | None, seed: int) -> tuple[list[dict], Counter]:
+def load_split() -> dict:
+    if not SPLIT_FILE.exists():
+        sys.exit(f"no split at {SPLIT_FILE}, run `python make_split.py` first")
+    return json.loads(SPLIT_FILE.read_text(encoding="utf-8"))
+
+
+def build_tasks(data: dict, limit: int | None, seed: int,
+                split: str = "all") -> tuple[list[dict], Counter]:
     """
     One task per garment instance that this ontology can express.
 
@@ -105,6 +113,12 @@ def build_tasks(data: dict, limit: int | None, seed: int) -> tuple[list[dict], C
             "bbox": (x, y, w, h),
             "truth": truth,
         })
+
+    if split != "all":
+        keep = set(load_split()[split])
+        before = len(tasks)
+        tasks = [t for t in tasks if t["file_name"] in keep]
+        dropped[f"not in the {split} half of the split"] += before - len(tasks)
 
     if limit is not None and limit < len(tasks):
         random.Random(seed).shuffle(tasks)
@@ -217,7 +231,8 @@ def region_report(results: list[dict]) -> dict | None:
 
 
 def report(results: list[dict], dropped: Counter, use_rembg: bool,
-           two_stage: bool, model: str, ensemble: bool, aliases: bool) -> dict:
+           two_stage: bool, model: str, ensemble: bool, aliases: bool,
+           split: str = "all") -> dict:
     n = len(results)
     top1 = sum(r["truth"] == r["predicted"] for r in results)
     top3 = sum(r["truth"] in r["top3"] for r in results)
@@ -231,7 +246,7 @@ def report(results: list[dict], dropped: Counter, use_rembg: bool,
     # the number to beat: always answer with the commonest class
     baseline = support.most_common(1)[0][1] / n if n else 0
 
-    print(f"\n{n} instances, {model}")
+    print(f"\n{n} instances, {model}, {split} split")
     print(f"  {'two-stage/' + two_stage if two_stage else 'flat'} category, "
           f"{'ensembled' if ensemble else 'single'} prompts, "
           f"aliases {'on' if aliases else 'off'}, "
@@ -291,6 +306,7 @@ def report(results: list[dict], dropped: Counter, use_rembg: bool,
 
     return {
         "instances": n,
+        "split": split,
         "model": model,
         "prompt_ensemble": ensemble,
         "aliases": aliases,
@@ -336,18 +352,25 @@ def main():
                     help="average every label over all PROMPT_TEMPLATES")
     ap.add_argument("--no-aliases", action="store_true",
                     help="offer CLIP only the 12 ontology labels, no CATEGORY_ALIASES")
+    ap.add_argument("--split", choices=["all", "dev", "test"], default="all",
+                    help="dev while you are still making choices, test once at "
+                         "the end, all to reproduce the pre-split numbers")
     ap.add_argument("--json", help="write the numbers to this file")
     args = ap.parse_args()
 
+    if args.split == "test":
+        print("measuring on the held-out test half: this number is only honest "
+              "if nothing was tuned against it")
+
     data = load_annotations()
-    tasks, dropped = build_tasks(data, args.limit, args.seed)
+    tasks, dropped = build_tasks(data, args.limit, args.seed, args.split)
     print(f"{len(tasks)} garment instances to classify")
 
     results = run(tasks, args.remove_bg, args.two_stage, args.model,
                   args.prompt_ensemble, not args.no_aliases)
     summary = report(results, dropped, args.remove_bg, args.two_stage,
                      args.model or CLIP_MODEL, args.prompt_ensemble,
-                     not args.no_aliases)
+                     not args.no_aliases, args.split)
 
     if args.json:
         Path(args.json).write_text(json.dumps(summary, indent=2), encoding="utf-8")

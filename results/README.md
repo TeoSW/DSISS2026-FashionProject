@@ -20,6 +20,12 @@ always be traced back to what produced it.
 | `fashionclip_prompt_ensemble.json` | FashionCLIP | 19 labels | 58.6% | six averaged templates lose 0.8 |
 | `subset300_vitb32_crop_only.json` | ViT-B/32 | 12 labels | 52.0% | control for the one below |
 | `subset300_vitb32_rembg.json` | ViT-B/32 | 12 labels | 49.3% | background removal buys nothing |
+| `fashionclip_final_dev.json` | FashionCLIP | 19 labels | 63.2% | the frozen pipeline on the dev half |
+| `fashionclip_final_test.json` | FashionCLIP | 19 labels | 63.5% | the same, on the held-out test half |
+
+The last two are the pre-fine-tuning baseline, measured after the dev/test split
+was frozen. Anything fine-tuning produces is compared against those, not against
+the whole-set numbers, and `--split test` is run once at the end.
 
 The three runs used for the checkpoint comparison are `vitb32_aliases`,
 `vitl14_aliases` and `fashionclip_aliases_final`: same vocabulary, same single
