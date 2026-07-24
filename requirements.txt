@@ -13,5 +13,10 @@ onnxruntime
 # --- knowledge graph ---
 neo4j
 
+# --- http api for the front end (api.py) ---
+fastapi
+uvicorn[standard]
+python-multipart
+
 # --- config ---
 python-dotenv

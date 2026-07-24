@@ -469,6 +469,26 @@ predicted material distribution instead, which shows the model leans towards
 `polyester` (26%) and almost never says `cotton` (1.3%), but proves nothing
 about accuracy.
 
+## HTTP API
+
+```bash
+uvicorn api:app --port 8000        # http://localhost:8000/docs
+```
+
+`api.py` puts the pipeline behind five endpoints so a browser can use it:
+`/health`, `/analyze` (multipart image in, attributes and seasons out, with the
+background-removed cutout as a data URI), `/ontology`, `/garments` and `/stats`.
+Everything needing a GPU, 600MB of weights or a Bolt connection stays server
+side; the browser only ever sees JSON.
+
+The model loads on the first `/analyze` rather than at import, so the server
+starts instantly and `/health` answers while the weights are still loading. That
+first call takes 20 to 40 seconds and later ones about three, which any front
+end has to say out loud rather than showing a silent spinner.
+
+The React front end is a separate project, briefed in
+[FRONTEND_PROMPT.md](FRONTEND_PROMPT.md).
+
 ## Fine-tuning
 
 ```bash
@@ -586,9 +606,11 @@ project predicts.
 ```
 scraper.py           dataset downloader / scraper (existing)
 cli.py               command-line entry point
+api.py               HTTP wrapper for the front end
 evaluate.py          CLIP vs Fashionpedia, the thesis metric
 finetune.py          vision-tower fine-tuning (research only)
 make_split.py        freezes the dev/test split, once
+FRONTEND_PROMPT.md   the brief the React app is built from
 results/             every evaluation run, versioned (data/ is not)
 splits/              the frozen dev/test assignment
 config.py            Neo4j creds + CLIP model + labels + warmth + dataset tables
@@ -610,10 +632,11 @@ docker-compose.yml   Neo4j service (image pinned to 5.26-community)
    two-stage classification, prompt ensembling and background removal did not
    (49.0% → 63.3%)
 6. ✅ Dev/test split frozen before any training
-7. Fine-tuning, now that the cheap levers are exhausted (research only, and
-   the weights are never shipped)
-6. Conversational layer: LLM → Cypher over the graph
-7. Frontend (Streamlit)
+7. ✅ Fine-tuning: 63.2% → 80.5% top-1 on dev (research only, never shipped)
+8. ✅ HTTP API over the pipeline
+9. React front end, briefed in `FRONTEND_PROMPT.md`
+10. One final run on the held-out test half, when nothing else will change
+11. Conversational layer: LLM → Cypher over the graph
 
 ## License
 
