@@ -1,41 +1,35 @@
 # Front end
 
-The React app is built separately, in Lovable, and talks to `api.py` over HTTP.
-The prompt below is the whole brief: paste it into Lovable as the first message.
-
-## Before you paste it
-
-Start the backend first, so you can point the app at something real:
+**The app described below is built and lives in `frontend/`.** This file is the
+requirements document it was written against, kept because a specification that
+predates the code is worth more in a thesis than one reconstructed from it.
 
 ```bash
-uvicorn api:app --port 8000
+uvicorn api:app --port 8000                  # terminal one
+cd frontend && npm install && npm run dev    # terminal two
 ```
 
-`http://localhost:8000/docs` is the live contract. If it does not open, the
-prompt below has nothing to talk to.
+`http://localhost:8000/docs` is the live contract. If it does not open, the app
+has nothing to talk to and will say so on its own.
 
-**The part that catches everyone.** Lovable previews are served from an HTTPS
-address on the public internet. Your backend is `http://localhost:8000`, on your
-machine. A browser will not let a public page call your laptop without asking
-first, and when it refuses, the console says "failed to fetch", which looks like
-a bug in the app and is not.
+**Serving it from anywhere other than localhost.** A page on a public HTTPS
+address cannot call `http://localhost:8000` on your machine without permission,
+and when the browser refuses, the console says "failed to fetch", which looks
+like a bug in the app and is not. `api.py` already answers Chrome's
+private-network preflight, which removes one of the two obstacles; the other is
+HTTPS itself. Put the backend behind a tunnel and point the app at it:
 
-Three ways out, in the order I would try them:
+```bash
+cloudflared tunnel --url http://localhost:8000
+```
 
-1. **Export the Lovable project to GitHub and run it locally** with `npm run dev`.
-   Front end and backend are then both on localhost and nothing is blocked. This
-   is the one to use while building.
-2. **Put the backend behind a tunnel** for a demo you give from someone else's
-   screen: `cloudflared tunnel --url http://localhost:8000` prints an HTTPS
-   address; set `VITE_API_URL` to it.
-3. Deploy the backend to a machine with a GPU. Only worth it after the thesis.
-
-`api.py` already answers Chrome's private-network preflight, which removes one
-of the two obstacles. The other one is HTTPS, and only a tunnel fixes that.
+then set `VITE_API_URL` to the address it prints (see `frontend/.env.example`).
+Running both on localhost, which is what `npm run dev` does, avoids the problem
+entirely and is the right setup while building and for the defence.
 
 ---
 
-## The prompt
+## The requirements
 
 Build a single-page React app called **Fitting Room** for a garment recognition
 system. A person uploads one photo of one piece of clothing; the app sends it to
@@ -63,6 +57,7 @@ component.
 ```json
 {
   "id": "6e942cce6f50",
+  "analysis_id": "1dc75ef49050",
   "tags": {
     "category": { "label": "t-shirt",       "confidence": 0.658 },
     "material": { "label": "polyester",     "confidence": 0.718 },
@@ -82,10 +77,11 @@ component.
 }
 ```
 
-`id` is `null` and `saved` is `false` when `save` was false. `cutout` is the
-photo with its background removed, ready to drop straight into an `<img src>`.
-`warmth` is an integer from 1 to 11. `layer` is one of `base`, `mid`, `outer`,
-`bottom`, `full`.
+`id` is `null` and `saved` is `false` when `save` was false; `analysis_id` is
+always present and is the handle `/feedback` takes. `cutout` is the photo with
+its background removed, ready to drop straight into an `<img src>`. `warmth` is
+an integer from 1 to 11. `layer` is one of `base`, `mid`, `outer`, `bottom`,
+`full`.
 
 Error responses are `{ "detail": "..." }` with status 400 (empty upload), 413
 (over 12MB), 415 (not a readable image) or 503 (database write failed). Show
@@ -99,9 +95,48 @@ use it to explain answers. Never hardcode a copy of these lists.
   "attributes": { "category": ["t-shirt", "shirt", "..."], "material": ["cotton", "..."] },
   "seasons": [ { "name": "hot", "temp_range": "above 25 C", "warmth_min": 1, "warmth_max": 3 } ],
   "material_warmth": { "linen": 1, "wool": 5 },
-  "category_warmth": { "coat": { "warmth": 5, "layer": "outer" } }
+  "category_warmth": { "coat": { "warmth": 5, "layer": "outer" } },
+  "sleeve_modifier": { "sleeveless": -1, "short sleeves": 0, "long sleeves": 1 }
 }
 ```
+
+**`POST /feedback`** — JSON in, what changed out. `verdict` is `"correct"` or
+`"wrong"`; `corrections` maps an attribute group to the label it should have
+been, and every value is checked against `/ontology` server side, so an invented
+label comes back as a 400 with the list of legal ones in `detail`.
+
+```json
+{
+  "analysis_id": "1dc75ef49050",
+  "verdict": "wrong",
+  "corrections": { "material": "cotton" },
+  "note": "it is a cotton jersey, not knit"
+}
+```
+
+```json
+{
+  "id": "6dd522e3a38d",
+  "verdict": "wrong",
+  "corrections": { "material": "cotton" },
+  "warmth": 3,
+  "layer": "full",
+  "seasons": [ { "name": "hot", "temp_range": "above 25 C" } ],
+  "graph_updated": true,
+  "garment_updated": true,
+  "corpus_size": 12
+}
+```
+
+`warmth`, `layer` and `seasons` are the garment re-derived from the corrected
+facts, so the result panel updates from this response without re-analysing the
+photo. `garment_updated` is false when the garment was never saved: the
+correction is still recorded, there is simply no stored node to re-point. The
+analysis is only correctable while the server still remembers it (the last 32);
+after that `/feedback` answers 404 and says to analyse the photo again.
+
+**`GET /feedback/stats`** — the corpus counts and the confusion table, from both
+the JSONL file and the graph.
 
 **`GET /garments?material=cotton`** or `?season=cold`, `?category=`, `?style=`,
 `?color=`, `?sleeve=` — exactly one filter per call.
@@ -109,6 +144,46 @@ use it to explain answers. Never hardcode a copy of these lists.
 ```json
 { "filter": { "material": "cotton" }, "results": [ { "id": "6e942cce6f50" } ] }
 ```
+
+**`GET /wardrobe`**, optionally `?region=upper|lower|full|unplaced` — everything
+stored, with the fields a card needs. `region` is answered by traversing
+`(Garment)->(Category)-[:WORN_ON]->(Region)`, so it is a graph question and not
+a filter the browser could have applied itself.
+
+```json
+{
+  "region": "upper",
+  "regions": { "upper": 6, "lower": 2, "full": 1 },
+  "count": 6,
+  "items": [
+    {
+      "id": "236ae8f50598",
+      "category": "hoodie", "region": "upper", "material": "cotton",
+      "color": "black", "sleeve": "long sleeves", "style": "casual",
+      "warmth": 7, "layer": "mid",
+      "category_confidence": 0.62, "corrected": true,
+      "seasons": [ { "name": "mild", "temp_range": "10-18 C" } ],
+      "photo_url": "/garments/236ae8f50598/image",
+      "created_at": "2026-07-24T19:41:02Z"
+    }
+  ]
+}
+```
+
+`corrected` is true when a person overwrote any of its attributes; mark those
+cards. `photo_url` is null for garments stored before pictures were kept, which
+is a real state and needs its own wording, not a broken image.
+
+**`GET /garments/{id}/image`** — the stored cutout as PNG, immutable and
+cacheable for a year. **`DELETE /garments/{id}`** removes the garment, its edges
+and its picture; 404 if it was never there. Any `Correction` about it survives on
+purpose.
+
+**`GET /insights`** — counts for the statistics section: `graph.by_category`,
+`by_material`, `by_color`, `by_style`, `by_layer`, `by_season`, the `warmth`
+histogram, `regions`, and `totals` (garments, mean warmth, mean confidence, how
+many edges fall below 0.4, how many a person wrote). Plus `photos` (files and
+bytes on disk) and the feedback summary.
 
 **`GET /stats`** — `{ "nodes": { "Garment": 4, "Category": 12 }, "relationships": {...} }`.
 
@@ -141,9 +216,59 @@ the actual arithmetic for this garment, for example "polyester 2 + t-shirt 1,
 short sleeves 0, so 3 of 11". This is the point of the whole project and it
 should be visible, not buried.
 
-**Library.** A filter row of chips built from `/ontology` (materials, seasons).
-Clicking one calls `/garments` and lists what comes back. Empty is a normal
-state and says "nothing stored with this filter yet", not an error.
+**Correction.** Under the result, two buttons: "yes, it is right" and "no, fix
+it". The first posts a `correct` verdict straight away, because a confirmation
+is signal too and should cost one click. The second opens a form with one select
+per attribute group, built from `/ontology` and preselected to what the model
+answered, plus a free-text note for the case where none of the labels fit. Only
+the groups that actually changed are sent.
+
+If the garment was never saved, a correction files it: the response comes back
+with `filed: true` and a `garment_id`, and it appears in the wardrobe under the
+label the person gave, not the one the model guessed. Reflect that in the result
+panel, which is no longer showing an unsaved analysis.
+
+Afterwards, show a receipt that states literally what happened: which label
+became which, whether the graph accepted it, whether the stored garment was
+re-derived and what its new warmth is, and how many judged analyses the corpus
+now holds. Do not animate a progress bar suggesting the model just learned
+something. It did not; the graph changed and the corpus grew, and the receipt
+should say exactly that.
+
+**Wardrobe.** What is stored, drawn as a wardrobe rather than listed as a table.
+A rail per part of the body, cards hanging from it, and on each card the garment
+photograph, because `e0c5053d68ee` tells a person nothing. Keep the id on the
+card in small type: it is what the graph calls this thing, and hiding it makes
+the two views impossible to line up.
+
+Beside the rails, a tailor's dummy with clickable zones. Clicking the torso
+shows what is worn on the upper body, the legs the lower, and the dress form
+next to it the full-length rail; each zone carries its count and toggles off
+when clicked again. Do not stack a third zone on top of the first two, and do
+not navigate away: the rails are already below the figure, so bring them into
+view.
+
+Every card can be removed. Two clicks, the button becoming its own confirmation,
+no modal dialogue: stealing focus to ask "are you sure" about one garment is
+heavier than the action deserves. After a delete, the rails, the dummy's counts
+and the statistics all have to reflect it without a page reload.
+
+Empty is a normal state, per rail and overall, and says so plainly.
+
+**Statistics.** Counts over what is stored: per category, material, colour,
+style and layer, a histogram of the warmth scores across the 1 to 11 scale,
+season coverage, mean confidence with the number of edges below 0.4, how many
+attributes a person overwrote, and the confusion table from `/feedback/stats`.
+
+Every chart here has a single series, so use one accent colour and let the
+labels do the identifying; six hues for six bars of the same measurement is
+decoration pretending to be information. The one exception is the colour
+breakdown, where a swatch is legitimate because the label *is* a colour.
+
+State clearly, in the panel itself, that none of this is accuracy. It describes
+the contents of one wardrobe. Accuracy needs labelled ground truth and lives in
+`evaluate.py`, and a large confident number in a UI is exactly how the two get
+confused.
 
 ### States that must exist
 
@@ -181,3 +306,6 @@ designed variant rather than an inversion.
 - do not add login, accounts or a database of your own
 - do not round a confidence up to make it look better, and do not hide a low one
 - do not use emoji as icons
+- do not let a correction be typed freely into the label fields; the vocabulary
+  is whatever `/ontology` returns, and anything else belongs in the note
+- do not claim the model improved because somebody pressed a button

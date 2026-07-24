@@ -18,17 +18,43 @@ instantly and `GET /health` answers while the weights are still loading.
 import base64
 import io
 import uuid
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from config import ATTRIBUTES, CATEGORY_WARMTH, CLIP_MODEL, MATERIAL_WARMTH, SEASONS
-from pipeline import graph, weather
+from config import (
+    ATTRIBUTES,
+    CATEGORY_WARMTH,
+    CLIP_MODEL,
+    MATERIAL_WARMTH,
+    SEASONS,
+    SLEEVE_MODIFIER,
+)
+from pipeline import feedback as fb
+from pipeline import graph, photos, weather
 
 MAX_UPLOAD = 12 * 1024 * 1024  # a phone photo is 3-8MB; past 12 something is wrong
+
+# The last few analyses, so /feedback can archive the image a correction is
+# about without the browser having to upload it a second time. Bounded because
+# this is a process-local cache and not storage: restart the server and the
+# oldest analyses simply stop being correctable, which is a fair trade for not
+# holding decoded images forever.
+RECENT_LIMIT = 32
+_recent: "OrderedDict[str, dict]" = OrderedDict()
+
+
+def _remember(analysis_id: str, image: Image.Image, cutout: Image.Image,
+              tags: dict, garment_id: str | None, filename: str) -> None:
+    _recent[analysis_id] = {"image": image, "cutout": cutout, "tags": tags,
+                            "garment_id": garment_id, "filename": filename}
+    while len(_recent) > RECENT_LIMIT:
+        _recent.popitem(last=False)
 
 
 class Tag(BaseModel):
@@ -38,6 +64,7 @@ class Tag(BaseModel):
 
 class Analysis(BaseModel):
     id: str | None
+    analysis_id: str
     tags: dict[str, Tag]
     warmth: int
     layer: str
@@ -45,6 +72,31 @@ class Analysis(BaseModel):
     summary: str
     cutout: str | None  # data URI of the background-removed image
     saved: bool
+
+
+class Feedback(BaseModel):
+    """What a person says about one analysis."""
+    analysis_id: str
+    verdict: str = Field(description="'correct' or 'wrong'")
+    corrections: dict[str, str] = Field(
+        default_factory=dict,
+        description="group -> the label it should have been, e.g. {'category': 'shirt'}",
+    )
+    note: str = ""
+
+
+class FeedbackResult(BaseModel):
+    id: str
+    garment_id: str | None
+    verdict: str
+    corrections: dict[str, str]
+    warmth: int | None
+    layer: str | None
+    seasons: list[dict]
+    graph_updated: bool
+    garment_updated: bool
+    filed: bool  # true when the correction created the garment it describes
+    corpus_size: int
 
 
 @asynccontextmanager
@@ -67,7 +119,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -124,6 +176,7 @@ def ontology():
         "material_warmth": MATERIAL_WARMTH,
         "category_warmth": {k: {"warmth": w, "layer": l}
                             for k, (w, l) in CATEGORY_WARMTH.items()},
+        "sleeve_modifier": SLEEVE_MODIFIER,
     }
 
 
@@ -161,8 +214,12 @@ async def analyze(
     if save:
         garment_id = uuid.uuid4().hex[:12]
         try:
+            # the picture is written first: a Garment node whose photo is
+            # missing shows an empty frame in the wardrobe, which is worse than
+            # not having stored it at all
+            photo = photos.save(garment_id, rgba)
             graph.save_garment(garment_id, file.filename or "upload", tags,
-                               warmth=score, layer=layer)
+                               warmth=score, layer=layer, photo=photo)
             # asked of the graph, not of the model
             from_graph = graph.infer_weather(garment_id)
             if from_graph:
@@ -170,10 +227,17 @@ async def analyze(
             saved = True
         except Exception as e:
             # a dead database must not lose the user their analysis
+            photos.delete(garment_id)
             raise HTTPException(503, f"analysed fine, but the graph write failed: {e}")
+
+    # every analysis gets a handle, saved or not, so it can be corrected;
+    # `id` stays the graph's id and is null when nothing was written there
+    analysis_id = uuid.uuid4().hex[:12]
+    _remember(analysis_id, rgb, rgba, tags, garment_id, file.filename or "upload")
 
     return Analysis(
         id=garment_id,
+        analysis_id=analysis_id,
         tags={k: Tag(**v) for k, v in tags.items()},
         warmth=score,
         layer=layer,
@@ -182,6 +246,134 @@ async def analyze(
         cutout=_data_uri(rgba) if cutout else None,
         saved=saved,
     )
+
+
+@app.post("/feedback", response_model=FeedbackResult)
+def submit_feedback(body: Feedback):
+    """
+    Tell the system it got one wrong, and what the answer should have been.
+
+    Three things happen, and they are worth keeping distinct:
+
+      1. the correction is appended to data/feedback/corrections.jsonl with the
+         image, which is training data for a later run of finetune.py
+      2. a Correction node goes into the graph, so the confusion table can be
+         queried in Cypher
+      3. if the garment was saved, its edges are re-pointed at the corrected
+         labels and the weather is re-derived from them on the spot
+
+    Only the third is instant. The model itself does not change until somebody
+    retrains it on the corpus, and pretending otherwise would be a lie told by
+    a progress bar.
+    """
+    if body.verdict not in fb.VERDICTS:
+        raise HTTPException(400, f"verdict must be one of {list(fb.VERDICTS)}")
+
+    remembered = _recent.get(body.analysis_id)
+    if remembered is None:
+        raise HTTPException(
+            404,
+            "that analysis is no longer in memory. Analyse the photo again and "
+            "flag the new result.",
+        )
+
+    # a correction that invents a label would poison both the graph and the
+    # training corpus, so the vocabulary is the one in config.py or nothing
+    for group, label in body.corrections.items():
+        if group not in ATTRIBUTES:
+            raise HTTPException(400, f"unknown attribute group '{group}'")
+        if label not in ATTRIBUTES[group]:
+            raise HTTPException(
+                400, f"'{label}' is not a {group} this system knows. "
+                     f"Pick one of: {', '.join(ATTRIBUTES[group])}"
+            )
+    if body.verdict == "wrong" and not body.corrections and not body.note.strip():
+        raise HTTPException(400, "say what was wrong: pick a label or write a note")
+
+    tags = remembered["tags"]
+    garment_id = remembered["garment_id"]
+    feedback_id = uuid.uuid4().hex[:12]
+
+    fb.record(
+        feedback_id, body.verdict, tags, body.corrections,
+        note=body.note, garment_id=garment_id, model=CLIP_MODEL,
+        image=remembered["image"],
+    )
+
+    # the corrected picture of the garment: predicted labels with the person's
+    # answers written over them, which is what the warmth has to be recomputed on
+    fixed = {g: dict(t) for g, t in tags.items()}
+    for group, label in body.corrections.items():
+        fixed.setdefault(group, {})["label"] = label
+        fixed[group]["confidence"] = 1.0
+
+    warmth = weather.warmth_score(fixed)
+    layer = weather.layer_of(fixed)
+    seasons = weather.seasons_for(warmth)
+
+    graph_updated = garment_updated = filed = False
+    try:
+        if garment_id and body.corrections:
+            graph.apply_correction(garment_id, body.corrections, warmth, layer)
+            garment_updated = True
+        elif body.corrections:
+            # Nothing was stored, and a person has just said what this garment
+            # actually is. That answer is better than anything the model
+            # produced, so the garment is filed now, under the corrected label,
+            # marked as a human answer. Saying "wrong, it is a hoodie" puts it
+            # on the hoodie hook, which is the only place it belongs.
+            garment_id = uuid.uuid4().hex[:12]
+            photo = photos.save(garment_id, remembered["cutout"])
+            graph.save_garment(garment_id, remembered["filename"], fixed,
+                               warmth=warmth, layer=layer, photo=photo,
+                               source="human")
+            graph.apply_correction(garment_id, body.corrections, warmth, layer)
+            filed = garment_updated = True
+
+        graph.save_correction(feedback_id, body.verdict, tags, body.corrections,
+                              note=body.note, garment_id=garment_id, model=CLIP_MODEL)
+        graph_updated = True
+
+        if garment_id:
+            from_graph = graph.infer_weather(garment_id)
+            if from_graph:
+                seasons = from_graph
+    except Exception as e:
+        # the corpus write already succeeded; a dead database must not throw
+        # away what the person just told us
+        print(f"feedback {feedback_id} saved to disk but not to Neo4j: {e}")
+
+    return FeedbackResult(
+        id=feedback_id,
+        garment_id=garment_id,
+        verdict=body.verdict,
+        corrections=body.corrections,
+        warmth=warmth,
+        layer=layer,
+        seasons=seasons,
+        graph_updated=graph_updated,
+        garment_updated=garment_updated,
+        filed=filed,
+        corpus_size=len(fb.load()),
+    )
+
+
+@app.get("/feedback/stats")
+def feedback_stats():
+    """
+    What the correction loop has collected so far, from both stores.
+
+    `corpus` is the file on disk and is always available; `graph` is the same
+    thing counted in Cypher and is absent when Neo4j is down. They should
+    agree, and when they do not, the file is the one to trust: it is written
+    first and unconditionally.
+    """
+    out = {"corpus": fb.summary(), "graph": None}
+    try:
+        out["graph"] = graph.correction_stats()
+    except Exception as e:
+        out["graph_error"] = str(e)
+    return out
 
 
 @app.get("/garments")
@@ -199,6 +391,74 @@ def garments(category: str | None = None, material: str | None = None,
             return {"filter": {group: value}, "results": [{"id": i} for i in ids]}
 
     raise HTTPException(400, "pass one filter, e.g. ?material=cotton or ?season=cold")
+
+
+@app.get("/wardrobe")
+def wardrobe(region: str | None = None):
+    """
+    Everything stored, with its picture, grouped the way a wardrobe is.
+
+    `region` filters to one part of the body and is answered by traversing
+    (Garment)->(Category)-[:WORN_ON]->(Region), so clicking the mannequin is a
+    graph question and not a filter applied in the browser.
+    """
+    if region and region not in ("upper", "lower", "full", "unplaced"):
+        raise HTTPException(400, "region must be upper, lower, full or unplaced")
+    items = graph.wardrobe(region)
+    for item in items:
+        item["photo_url"] = f"/garments/{item['id']}/image" if item.get("photo") else None
+    return {
+        "region": region,
+        "regions": graph.region_counts(),
+        "count": len(items),
+        "items": items,
+    }
+
+
+@app.get("/garments/{garment_id}/image")
+def garment_image(garment_id: str):
+    """The stored cutout. Cached hard: a garment's picture never changes."""
+    path = photos.path(garment_id)
+    if path is None:
+        raise HTTPException(404, "no picture stored for that garment")
+    return FileResponse(path, media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+
+@app.delete("/garments/{garment_id}")
+def delete_garment(garment_id: str):
+    """
+    Take one garment out of the wardrobe.
+
+    The node goes, its picture goes, and any Correction about it stays: what the
+    model got wrong is evidence about the model, and throwing away the garment
+    does not unmake the mistake.
+    """
+    gone = graph.delete_garment(garment_id)
+    if not gone:
+        raise HTTPException(404, "no garment with that id")
+    photos.delete(garment_id)
+    return {"deleted": garment_id, "photo_removed": photos.path(garment_id) is None}
+
+
+@app.get("/insights")
+def insights():
+    """
+    Everything countable about what is stored: per category, material, colour,
+    style and layer, the warmth histogram, the season coverage, and how much of
+    it a person corrected.
+
+    None of it is accuracy. This describes the contents of one wardrobe;
+    accuracy is measured in evaluate.py against labelled ground truth, and the
+    two must not be presented as the same kind of number.
+    """
+    out = {"graph": graph.insights(), "photos": photos.usage(),
+           "feedback": fb.summary(), "model": CLIP_MODEL}
+    try:
+        out["corrections"] = graph.correction_stats()
+    except Exception as e:
+        out["corrections_error"] = str(e)
+    return out
 
 
 @app.get("/stats")

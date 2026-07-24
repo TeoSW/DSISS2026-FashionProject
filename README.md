@@ -3,7 +3,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Clothing recognition pipeline: photo → background removal → CLIP tags → Neo4j knowledge graph.
-CLI first, frontend later.
+
+One photo of one garment goes in. What it is, what it is made of and how warm it
+is come back, the weather it suits is derived by traversing the graph rather
+than predicted, and anything the model got wrong can be corrected by hand. There
+is a CLI, an HTTP API and a web app; the measurement that justifies all of it is
+in [Evaluation](#evaluation).
 
 ## Stack & licenses (commercial-clean path)
 
@@ -34,6 +39,10 @@ python -m venv .venv
 pip install -r requirements.txt
 copy .env.example .env            # Windows (cp on Linux/Mac)
 ```
+
+Python 3.12 and Docker are enough for everything except the web app, which needs
+Node 20 or newer. The CLI, the API, the evaluation and the fine-tuning all run
+without Node installed.
 
 ## Run the database
 
@@ -67,11 +76,12 @@ python cli.py analyze photo.jpg --json    # raw JSON instead of the summary
 python cli.py analyze photo.jpg --save --dataset fashionpedia   # record where the image came from
 python cli.py query --material cotton     # list stored garments by attribute
 python cli.py query --season cold         # list stored garments by weather
+python cli.py feedback                    # what people corrected, and the confusion table
 ```
 
-`test-db`, `seed`, `stats` and `query` only need the `neo4j` driver; torch and
-rembg are imported inside `analyze`, so the database side works before the ~2.5GB
-of ML dependencies finish installing.
+`test-db`, `seed`, `stats`, `query` and `feedback` only need the `neo4j` driver;
+torch and rembg are imported inside `analyze`, so the database side works before
+the ~2.5GB of ML dependencies finish installing.
 
 First `analyze` downloads the CLIP model (~600MB), then it is cached.
 
@@ -110,18 +120,19 @@ RETURN g, m, c, s
 
 ## What is actually in the graph
 
-`python cli.py seed` writes 57 nodes and 20 relationships, before a single photo
+`python cli.py seed` writes 60 nodes and 32 relationships, before a single photo
 is analyzed:
 
 ```
 Category 12   Material 8   Style 6   Color 10   Sleeve 3
-Season 5      Dataset 3    DatasetClass 10
-COLDER_THAN 4   HAS_CLASS 10   MAPS_TO 6
+Season 5      Dataset 3    DatasetClass 10   Region 3
+COLDER_THAN 4   HAS_CLASS 10   MAPS_TO 6   WORN_ON 12
 ```
 
-Two halves. Category, Material and Season carry the warmth weights that answer
-the weather question described above. The rest records what `scraper.py` can
-fetch and what may legally be done with it:
+Three parts. Category, Material and Season carry the warmth weights that answer
+the weather question described above. `Region` says which part of the body each
+category is worn on, and is what the wardrobe is organised by. The rest records
+what `scraper.py` can fetch and what may legally be done with it:
 
 ```
 (Dataset {license, usage}) -[:HAS_CLASS]-> (DatasetClass) -[:MAPS_TO]-> (Category)
@@ -475,19 +486,124 @@ about accuracy.
 uvicorn api:app --port 8000        # http://localhost:8000/docs
 ```
 
-`api.py` puts the pipeline behind five endpoints so a browser can use it:
+`api.py` puts the pipeline behind eleven endpoints so a browser can use it:
 `/health`, `/analyze` (multipart image in, attributes and seasons out, with the
-background-removed cutout as a data URI), `/ontology`, `/garments` and `/stats`.
-Everything needing a GPU, 600MB of weights or a Bolt connection stays server
-side; the browser only ever sees JSON.
+background-removed cutout as a data URI), `/ontology`, `/garments`,
+`/garments/{id}/image`, `DELETE /garments/{id}`, `/wardrobe`, `/insights`,
+`/stats`, `/feedback` and `/feedback/stats`. Everything needing a GPU, 600MB of
+weights or a Bolt connection stays server side; the browser only ever sees JSON,
+except for the stored cutouts, which are served as PNG files.
 
 The model loads on the first `/analyze` rather than at import, so the server
 starts instantly and `/health` answers while the weights are still loading. That
 first call takes 20 to 40 seconds and later ones about three, which any front
 end has to say out loud rather than showing a silent spinner.
 
-The React front end is a separate project, briefed in
-[FRONTEND_PROMPT.md](FRONTEND_PROMPT.md).
+## The web app
+
+```bash
+uvicorn api:app --port 8000        # terminal one
+cd frontend && npm install && npm run dev   # terminal two, http://localhost:5173
+```
+
+`frontend/` is a React + TypeScript app built with Vite. It is five sections on
+one page, in the order the pipeline runs: **specimen** (drag, click or paste one
+photo), **reading** (the cutout beside the original, the five attributes with
+their confidences, the warmth meter and the season chips), **derivation** (the
+warmth arithmetic, drawn from `/ontology`, with the season windows and a needle
+at this garment's score), **wardrobe** and **statistics**.
+
+The wardrobe is the stored garments as a piece of furniture: a rail per part of
+the body, cards hanging from it with the actual photograph rather than a
+twelve-character id, and a tailor's dummy beside them. Clicking a part of the
+dummy is not a filter applied in the browser, it is this traversal:
+
+```cypher
+MATCH (g:Garment)-[:HAS_CATEGORY]->(:Category)-[:WORN_ON]->(:Region {name: 'upper'})
+```
+
+`Region` nodes are seeded from `CATEGORY_REGION` in `config.py`, the same table
+the rejected two-stage experiment used as a prompt trick. It failed there and
+earns its keep here as structure. Every card can be removed, which deletes the
+node, its edges and its picture, and leaves any `Correction` about it standing:
+what the model got wrong is evidence about the model, and deleting the garment
+does not unmake the mistake.
+
+Pictures are stored as files under `data/wardrobe/`, not as bytes in Neo4j, and
+what is kept is the cutout rather than the original photograph. It is what the
+model actually looked at, and a wardrobe full of background-free garments reads
+as a wardrobe instead of a folder of holiday snaps.
+
+The statistics section counts what is stored: per category, material, colour,
+style and layer, the warmth histogram over the 1 to 11 scale, season coverage,
+mean confidence with the number of edges below 40%, how many attributes a person
+overwrote, and the confusion table. None of it is accuracy, and the panel says
+so: a wardrobe can only tell you what it contains, while accuracy needs labelled
+ground truth and is measured by `evaluate.py`.
+
+It classifies nothing itself. Every label, number and season on the screen came
+back from the API, and when the backend is not answering the page says so and
+disables the controls instead of showing an empty result. The requirements it
+was built against are in [FRONTEND_PROMPT.md](FRONTEND_PROMPT.md).
+
+## Corrections: what happens when it gets one wrong
+
+Under every reading there are two buttons, "yes, it is right" and "no, fix it".
+The second opens a form built from `/ontology`, so a correction is always a
+label the system can store, with a free-text note for the case where none of the
+twelve words fit. Both verdicts are recorded: a confirmation is signal too, and
+costs one click.
+
+A correction goes to two places, and the difference between them matters.
+
+**The graph, immediately.** A `Correction` node is written, pointing at both the
+label the model chose and the label it should have chosen, so the mistake stays
+queryable as a pair. If the garment was saved, its attribute edge is re-pointed
+at the corrected value and marked `source: 'human'` with confidence 1.0, and
+because `infer_weather` reads the graph rather than the model, the weather
+answer changes on the spot. Correcting `knit` to `cotton` on a sleeveless dress
+moves it from 5/11 to 3/11 and from *warm, mild* to *hot, warm*, in the same
+request.
+
+If the garment was **not** saved, the correction files it. Saying "wrong, that
+is a hoodie" is a better answer than anything the model produced, so the garment
+is created then and there, under the corrected label, with `source: 'human'`,
+and it appears on the hoodie's rail in the wardrobe. Correcting something is the
+one moment when the system knows for certain what it is looking at, and throwing
+that away because a checkbox was unticked would be perverse.
+
+```cypher
+MATCH (c:Correction)-[p:PREDICTED]->(a), (c)-[s:SHOULD_BE]->(b)
+WHERE p.group = 'category' AND s.group = 'category'
+RETURN a.name AS predicted, b.name AS actual, count(*) AS n ORDER BY n DESC
+```
+
+**The training corpus, later.** The same correction is appended to
+`data/feedback/corrections.jsonl` with the image that produced it, in the shape
+`finetune.py --feedback` consumes. Each correction is repeated
+`--feedback-weight` times, because a hundred photos next to 74159 Fashionpedia
+crops would otherwise not register at all.
+
+```bash
+python cli.py feedback                    # what has been collected
+python finetune.py --epochs 2 --feedback  # fold it into the next checkpoint
+```
+
+Only the first half is instant. Pressing a button does not move a 151M-parameter
+vision tower; a few thousand class-balanced examples do, and the interface says
+exactly that rather than implying a model that learns per click. The honest
+description of this loop is: the knowledge graph is corrected now, the model is
+corrected in batches, and `evaluate.py --split dev` is what decides whether the
+batch helped.
+
+Two numbers this produces are worth reporting in the thesis and worth not
+overstating. `agreement` is the share of judged analyses where somebody pressed
+"right", and it is not accuracy: people flag what annoys them and shrug at what
+they agree with, so the sample selects itself. The confusion table is the useful
+part, because it says which pair of labels to spend the next round of work on.
+
+The images live under `data/`, which is gitignored: a correction carries a
+photograph somebody uploaded, and that does not belong in a public repository.
 
 ## Fine-tuning
 
@@ -610,7 +726,7 @@ api.py               HTTP wrapper for the front end
 evaluate.py          CLIP vs Fashionpedia, the thesis metric
 finetune.py          vision-tower fine-tuning (research only)
 make_split.py        freezes the dev/test split, once
-FRONTEND_PROMPT.md   the brief the React app is built from
+FRONTEND_PROMPT.md   the requirements the React app was built against
 results/             every evaluation run, versioned (data/ is not)
 splits/              the frozen dev/test assignment
 config.py            Neo4j creds + CLIP model + labels + warmth + dataset tables
@@ -619,6 +735,13 @@ pipeline/
   classify.py        CLIP zero-shot tagging
   weather.py         warmth scoring (the non-visual part)
   graph.py           Neo4j read/write + season inference + ontology seeding
+  feedback.py        the correction corpus: disk half of the feedback loop
+  photos.py          the stored cutouts the wardrobe displays
+frontend/            React + TypeScript + Vite web app
+  src/api.ts         the only file that knows where the backend is
+  src/App.tsx        five sections, one page, and the connection states
+  src/components/    Specimen, Reading, Flag, Derivation, Wardrobe,
+                     Mannequin, Insights
 docker-compose.yml   Neo4j service (image pinned to 5.26-community)
 ```
 
@@ -634,9 +757,15 @@ docker-compose.yml   Neo4j service (image pinned to 5.26-community)
 6. ✅ Dev/test split frozen before any training
 7. ✅ Fine-tuning: 63.2% → 80.5% top-1 on dev (research only, never shipped)
 8. ✅ HTTP API over the pipeline
-9. React front end, briefed in `FRONTEND_PROMPT.md`
-10. One final run on the held-out test half, when nothing else will change
-11. Conversational layer: LLM → Cypher over the graph
+9. ✅ React front end in `frontend/`, upload to answer to explanation
+10. ✅ Correction loop: graph now, training corpus for later
+11. ✅ Wardrobe: stored garments as photographs, organised by body region and
+    queried by clicking a tailor's dummy, with statistics over the contents
+12. One final run on the held-out test half, when nothing else will change
+13. Retrain on the corrections once there are enough of them, and report the
+    dev number before and after
+14. Conversational layer: LLM → Cypher over the graph, through parameterised
+    query templates and never free-form generated Cypher
 
 ## License
 

@@ -5,6 +5,7 @@ Fine-tune the vision tower of a CLIP checkpoint on the category task.
   python finetune.py --epochs 3
   python finetune.py --epochs 3 --limit 4000 --batch-size 32
   python finetune.py --out models/fashionclip-ft --lr 5e-6
+  python finetune.py --epochs 2 --feedback        also use submitted corrections
 
 The text tower stays frozen and the label prompts stay the ones in config.py, so
 the fine-tuned model keeps the zero-shot interface: it is saved with
@@ -136,6 +137,43 @@ class Crops(Dataset):
         return pixels, ONTOLOGY.index(t["truth"])
 
 
+class Photos(Dataset):
+    """
+    Whole photographs with one label each, which is what the correction corpus
+    holds: somebody uploaded a picture of one garment and said what it is. No
+    bounding box is involved, so unlike Crops there is nothing to cut out.
+    """
+
+    def __init__(self, pairs: list[tuple[str, str]], processor):
+        self.pairs = pairs
+        self.processor = processor
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, i):
+        path, label = self.pairs[i]
+        image = Image.open(path).convert("RGB")
+        pixels = self.processor(images=image, return_tensors="pt")["pixel_values"][0]
+        return pixels, ONTOLOGY.index(label)
+
+
+def feedback_pairs(weight: int) -> list[tuple[str, str]]:
+    """
+    Human corrections, repeated `weight` times each.
+
+    The repetition is not a trick, it is the only way a hundred corrections
+    register at all next to seventy thousand Fashionpedia crops. It also
+    overfits them if pushed far, so the number stays visible on the command
+    line instead of being buried in here.
+    """
+    from pipeline import feedback
+
+    pairs = [(p, l) for p, l in feedback.training_pairs("category")
+             if l in ONTOLOGY]
+    return pairs * max(1, weight)
+
+
 def text_features(model, processor, device) -> torch.Tensor:
     """
     One frozen vector per vocabulary word, then folded down to the twelve
@@ -183,6 +221,10 @@ def main():
     ap.add_argument("--limit", type=int, help="use only this many training crops")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--feedback", action="store_true",
+                    help="mix in the corrections people submitted through the app")
+    ap.add_argument("--feedback-weight", type=int, default=20,
+                    help="how many times each correction is repeated (default 20)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = ap.parse_args()
 
@@ -212,12 +254,32 @@ def main():
     for label, n in Counter(t["truth"] for t in tasks).most_common():
         print(f"  {label:10} {n}")
 
-    loader = DataLoader(Crops(tasks, processor), batch_size=args.batch_size,
-                        shuffle=False, num_workers=args.workers, drop_last=True)
+    dataset = Crops(tasks, processor)
+    total = len(tasks)
+    if args.feedback:
+        pairs = feedback_pairs(args.feedback_weight)
+        if not pairs:
+            print("--feedback: nothing in the corpus yet, training on Fashionpedia alone")
+        else:
+            unique = len({p for p, _ in pairs})
+            print(f"+ {unique} corrections, repeated {args.feedback_weight}x "
+                  f"= {len(pairs)} extra samples "
+                  f"({len(pairs) / (total + len(pairs)):.1%} of the run)")
+            for label, n in Counter(l for _, l in pairs).most_common():
+                print(f"  {label:10} {n}")
+            dataset = torch.utils.data.ConcatDataset([dataset, Photos(pairs, processor)])
+            total += len(pairs)
+
+    # shuffled only when the corpus is mixed in: Crops alone is deliberately
+    # ordered by file name so one decode serves several crops, and shuffling
+    # that away costs more than the ordering does
+    loader = DataLoader(dataset, batch_size=args.batch_size,
+                        shuffle=args.feedback, num_workers=args.workers,
+                        drop_last=True)
 
     trainable = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=0.01)
-    steps = args.epochs * (len(tasks) // args.batch_size)
+    steps = args.epochs * (total // args.batch_size)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(steps, 1))
     loss_fn = torch.nn.CrossEntropyLoss()
 

@@ -9,6 +9,7 @@ Command-line entry point that ties the pipeline together.
   python cli.py analyze photo.jpg --json      raw JSON instead of the summary
   python cli.py query --material cotton       list stored garments by attribute
   python cli.py query --season cold           list stored garments by weather
+  python cli.py feedback                      what people have corrected so far
 
 Run the database first:  docker compose up -d  &&  python cli.py seed
 """
@@ -152,6 +153,43 @@ def cmd_query(args):
         print(f"no garments with {group}={value}")
 
 
+def cmd_feedback(args):
+    """
+    The correction corpus, read off disk. Works with Neo4j down, on purpose:
+    the file is written first and is the record of last resort.
+    """
+    from pipeline import feedback
+
+    s = feedback.summary()
+    if not s["total"]:
+        print(f"no corrections yet ({s['corpus']} is empty or missing)")
+        print("the flag button in the web app writes here")
+        return
+
+    print(f"{s['total']} judged analyses: {s['confirmed']} confirmed, "
+          f"{s['corrected']} corrected")
+    print(f"agreement {s['agreement']:.1%}  (self-selected sample, not accuracy)")
+    print(f"{s['with_image']} have an archived image and can be trained on")
+
+    if s["per_group"]:
+        print("\ncorrections per attribute")
+        for group, n in s["per_group"].items():
+            print(f"  {group:10} {n}")
+    for group, pairs in s["confusions"].items():
+        print(f"\nmost corrected {group}")
+        for pair, n in pairs.items():
+            print(f"  {pair:34} {n}")
+
+    if args.pairs:
+        print(f"\ntraining pairs for '{args.group}'")
+        for path, label in feedback.training_pairs(args.group):
+            print(f"  {label:12} {path}")
+
+    n = len(feedback.training_pairs("category"))
+    print(f"\n{n} usable category examples. Retrain when this is in the "
+          f"thousands:\n  python finetune.py --feedback --epochs 2")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fashion recognition CLI")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -184,6 +222,13 @@ def main():
     q.add_argument("--sleeve")
     q.add_argument("--season", choices=[s["name"] for s in SEASONS])
     q.set_defaults(func=cmd_query)
+
+    f = sub.add_parser("feedback", help="summarise the corrections people submitted")
+    f.add_argument("--pairs", action="store_true",
+                   help="also list every (image, label) the fine-tuner would use")
+    f.add_argument("--group", default="category", choices=list(_GROUPS),
+                   help="which attribute --pairs reports")
+    f.set_defaults(func=cmd_feedback)
 
     args = parser.parse_args()
     args.func(args)
