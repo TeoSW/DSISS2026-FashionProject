@@ -11,6 +11,7 @@ kaggle.json
 
 # --- datasets and model output (big, regenerable) ---
 data/
+models/          # fine-tuned checkpoints, ~600MB each
 *.zip
 *.part
 cutout.png

@@ -469,6 +469,43 @@ predicted material distribution instead, which shows the model leans towards
 `polyester` (26%) and almost never says `cotton` (1.3%), but proves nothing
 about accuracy.
 
+## Fine-tuning
+
+```bash
+python scraper.py datasets                    # now the full set, train2020.zip is 3.2GB
+python finetune.py --epochs 3
+python evaluate.py --model models/finetuned --split dev
+```
+
+The text tower and the logit scale are frozen and the label prompts stay the
+ones in `config.py`, so only the vision tower moves. That keeps the zero-shot
+interface intact: the result is written with `save_pretrained`, and
+`evaluate.py --model models/finetuned` reads it back with no changes at all.
+Nothing about the measurement differs between the zero-shot run and the
+fine-tuned one except the weights, which is the same discipline the checkpoint
+comparison used.
+
+The model is trained against the twelve ontology labels while still being
+offered the nineteen-word vocabulary: the classifier head is built by averaging
+each label's aliases into one vector. Training it on twelve while serving it
+nineteen would teach it a task it is never asked at inference.
+
+**On the licence, plainly.** This trains on Fashionpedia images, which belong to
+third parties and are published for research. The resulting weights are a thesis
+artifact: not shipped, not redistributed, not what the product runs. The product
+stays zero-shot on FashionCLIP, whose MIT weights someone else trained on data
+they had rights to. Those are two different claims and the thesis should not
+blur them.
+
+Fashion-MNIST is the alternative that is MIT and freely trainable, and it is not
+used here: 28x28 grayscale carries no material, colour or texture, so it can
+teach the model nothing about the attributes this pipeline predicts, and only
+six of its ten classes map onto this ontology at all.
+
+Checkpoints land in `models/`, which is gitignored at roughly 600MB each.
+
+Measure on `--split dev`. The test half is for one run at the end.
+
 ## Datasets
 
 ```bash
@@ -500,6 +537,7 @@ project predicts.
 scraper.py           dataset downloader / scraper (existing)
 cli.py               command-line entry point
 evaluate.py          CLIP vs Fashionpedia, the thesis metric
+finetune.py          vision-tower fine-tuning (research only)
 make_split.py        freezes the dev/test split, once
 results/             every evaluation run, versioned (data/ is not)
 splits/              the frozen dev/test assignment
@@ -518,9 +556,12 @@ docker-compose.yml   Neo4j service (image pinned to 5.26-community)
 2. ✅ Weather inference through the graph
 3. ✅ Dataset provenance in the graph (licence travels with the garment)
 4. ✅ Evaluation script: CLIP vs Fashionpedia labels (thesis metric)
-5. ✅ Four experiments: FashionCLIP and a wider label vocabulary won,
-   two-stage classification and prompt ensembling did not (49.0% → 63.3%)
-6. Fine-tuning, now that the cheap levers are exhausted (research only)
+5. ✅ Five experiments: FashionCLIP and a wider label vocabulary won,
+   two-stage classification, prompt ensembling and background removal did not
+   (49.0% → 63.3%)
+6. ✅ Dev/test split frozen before any training
+7. Fine-tuning, now that the cheap levers are exhausted (research only, and
+   the weights are never shipped)
 6. Conversational layer: LLM → Cypher over the graph
 7. Frontend (Streamlit)
 
