@@ -106,10 +106,15 @@ def model_name() -> str:
     return _model_name
 
 
+def device() -> str:
+    """The GPU when there is one. Nothing here needs a choice from the caller."""
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def _load():
     global _model, _processor
     if _model is None:
-        _model = CLIPModel.from_pretrained(_model_name)
+        _model = CLIPModel.from_pretrained(_model_name).to(device())
         _processor = CLIPProcessor.from_pretrained(_model_name)
         _model.eval()
     return _model, _processor
@@ -127,7 +132,7 @@ def _as_tensor(out) -> torch.Tensor:
 @torch.no_grad()
 def _embed(prompts: list[str]) -> torch.Tensor:
     model, processor = _load()
-    inputs = processor(text=prompts, return_tensors="pt", padding=True)
+    inputs = processor(text=prompts, return_tensors="pt", padding=True).to(device())
     feats = _as_tensor(model.get_text_features(**inputs))
     return feats / feats.norm(dim=-1, keepdim=True)
 
@@ -170,7 +175,7 @@ def _region_features() -> torch.Tensor:
 @torch.no_grad()
 def _image_features(image: Image.Image) -> torch.Tensor:
     model, processor = _load()
-    inputs = processor(images=image, return_tensors="pt")
+    inputs = processor(images=image, return_tensors="pt").to(device())
     feats = _as_tensor(model.get_image_features(**inputs))
     return feats / feats.norm(dim=-1, keepdim=True)
 

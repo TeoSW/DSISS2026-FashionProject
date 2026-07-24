@@ -241,7 +241,7 @@ def main():
             opt.step()
             sched.step()
 
-            running += float(loss) * len(labels)
+            running += loss.detach().item() * len(labels)
             seen += len(labels)
             bar.set_postfix(loss=f"{running / seen:.3f}")
 

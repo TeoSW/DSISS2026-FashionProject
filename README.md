@@ -506,6 +506,56 @@ Checkpoints land in `models/`, which is gitignored at roughly 600MB each.
 
 Measure on `--split dev`. The test half is for one run at the end.
 
+### What it bought
+
+Two epochs over all 74159 training crops, batch 32, lr 1e-5 cosine-annealed,
+13.5 minutes on an RTX 5060 laptop. Measured on the dev half, against the frozen
+zero-shot baseline:
+
+| | zero-shot | fine-tuned | |
+|---|---|---|---|
+| top-1 | 63.2% | **80.5%** | +17.3 |
+| top-3 | 87.9% | **96.3%** | +8.4 |
+| macro F1 | 0.560 | **0.673** | +0.113 |
+| mean confidence | 0.755 | 0.868 | |
+| body region correct | 85.1% | 93.1% | |
+
+| label | support | recall | precision | F1 |
+|---|---|---|---|---|
+| `dress` | 305 | 72.8% → 87.5% | 81.9% → 89.9% | 0.771 → 0.887 (+0.116) |
+| `t-shirt` | 271 | 55.7% → 86.3% | 72.2% → 81.0% | 0.629 → 0.836 (+0.207) |
+| `trousers` | 123 | 69.1% → 88.6% | 85.0% → 80.7% | 0.762 → 0.845 (+0.083) |
+| `skirt` | 96 | 69.8% → 76.0% | 58.3% → 83.9% | 0.635 → 0.798 (+0.163) |
+| `jacket` | 70 | 42.9% → 71.4% | 62.5% → 72.5% | 0.508 → 0.719 (+0.211) |
+| `jeans` | 65 | 83.1% → 70.8% | 75.0% → 93.9% | 0.788 → 0.807 (+0.019) |
+| `coat` | 62 | 45.2% → 59.7% | 50.9% → 78.7% | 0.479 → 0.679 (+0.200) |
+| `shorts` | 62 | 72.6% → 91.9% | 73.8% → 90.5% | 0.732 → 0.912 (+0.180) |
+| `shirt` | 59 | 42.4% → 81.4% | 26.3% → 56.5% | 0.325 → 0.667 (+0.342) |
+| `blazer` | 40 | 55.0% → 40.0% | 36.1% → 76.2% | 0.436 → 0.525 (+0.089) |
+| `sweater` | 20 | 65.0% → 55.0% | 15.5% → 31.4% | 0.250 → 0.400 (+0.150) |
+| `hoodie` | 4 | 50.0% → 0.0% | 33.3% → 0.0% | 0.400 → 0.000 (-0.400) |
+| **macro** | 1177 | 60.3% → 67.4% | 55.9% → 69.6% | **0.560 → 0.673 (+0.113)** |
+
+Eleven of twelve classes improve on F1. The twelfth is `hoodie`, which has four
+instances in dev and 411 in training; it went from getting two right to getting
+none, and no conclusion of any kind should be drawn from that.
+
+**Before believing any of it**, the two splits were checked for overlap by file
+name in both directions: 45623 training images, 1158 validation images, zero in
+common. A seventeen-point jump is exactly the result that deserves that check
+before it deserves enthusiasm.
+
+**More data stopped helping early.** The same recipe on 20000 crops instead of
+74159 scores 79.8% and 0.662 macro F1, so 3.7 times the data bought 0.7 points.
+What is left is not a data volume problem: `blazer` at 0.525 and `sweater` at
+0.400 are confused with `jacket` and `coat`, garments that differ by cut and
+length rather than by anything a 224px crop shows clearly.
+
+**What fine-tuning did not touch.** Material, colour, style and sleeve are still
+zero-shot, because Fashionpedia has no fibre labels to train them on. The warmth
+score therefore rests on an unvalidated material prediction whatever the category
+accuracy says, and the thesis should not let the headline number imply otherwise.
+
 ## Datasets
 
 ```bash

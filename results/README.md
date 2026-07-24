@@ -23,9 +23,16 @@ always be traced back to what produced it.
 | `fashionclip_final_dev.json` | FashionCLIP | 19 labels | 63.2% | the frozen pipeline on the dev half |
 | `fashionclip_final_test.json` | FashionCLIP | 19 labels | 63.5% | the same, on the held-out test half |
 
-The last two are the pre-fine-tuning baseline, measured after the dev/test split
-was frozen. Anything fine-tuning produces is compared against those, not against
-the whole-set numbers, and `--split test` is run once at the end.
+| `finetuned_v1_dev.json` | fine-tuned, 20k crops | 19 labels | 79.8% | 2 epochs on a quarter of the data |
+| `finetuned_v2_dev.json` | fine-tuned, 74k crops | 19 labels | **80.5%** | 2 epochs on all of it |
+
+`fashionclip_final_dev` and `fashionclip_final_test` are the pre-fine-tuning
+baseline, measured after the dev/test split was frozen. Anything fine-tuning
+produces is compared against those, not against the whole-set numbers, and
+`--split test` is run once at the end.
+
+The two `finetuned_*` files are both on dev. The gap between them is what 3.7
+times more training data bought: 0.7 points.
 
 The three runs used for the checkpoint comparison are `vitb32_aliases`,
 `vitl14_aliases` and `fashionclip_aliases_final`: same vocabulary, same single

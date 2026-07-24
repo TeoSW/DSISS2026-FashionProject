@@ -11,7 +11,9 @@ kaggle.json
 
 # --- datasets and model output (big, regenerable) ---
 data/
-models/          # fine-tuned checkpoints, ~600MB each
+# fine-tuned checkpoints, ~600MB each. A trailing comment on this line would be
+# part of the pattern, not a comment: git only honours # at the start of a line.
+models/
 *.zip
 *.part
 cutout.png
