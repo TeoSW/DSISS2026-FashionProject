@@ -1,14 +1,26 @@
-# DSISS-2026-Code
+# WRDB
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+&nbsp;garment recognition through a knowledge graph
 
-Clothing recognition pipeline: photo → background removal → CLIP tags → Neo4j knowledge graph.
+Upload a photo of clothing and WRDB reports what it is, its material, colour,
+style and sleeve, then derives the weather it suits by **traversing a Neo4j graph
+rather than predicting it**. The reasoning lives in the graph, so it can be
+changed without retraining, and anything the model gets wrong is corrected by
+hand in one tap.
 
-One photo of one garment goes in. What it is, what it is made of and how warm it
-is come back, the weather it suits is derived by traversing the graph rather
-than predicted, and anything the model got wrong can be corrected by hand. There
-is a CLI, an HTTP API and a web app; the measurement that justifies all of it is
-in [Evaluation](#evaluation).
+It runs as three things over one pipeline: a **CLI**, an **HTTP API**, and a
+**React wardrobe app** where garments are stored as background-removed
+photographs, organised on a mannequin by body region, priced, given wash-care
+labels, recommended for the weather, and checked against the seasons they cannot
+yet dress for. A single photo can hold several garments; each is segmented,
+classified and stored on its own.
+
+Accuracy is measured against Fashionpedia and reported in full, dead ends
+included, in [Evaluation](#evaluation): **49%** top-1 zero-shot with a general
+model, **63%** with FashionCLIP and a wider vocabulary, **80%** after fine-tuning
+the vision tower. A [presentation deck](presentation/index.html) summarises the
+whole system.
 
 ## Stack & licenses (commercial-clean path)
 
@@ -21,9 +33,9 @@ in [Evaluation](#evaluation).
 | Fashion-MNIST | baseline dataset | MIT |
 | Fashionpedia | **eval / research only** | annotations CC-BY 4.0; images = 3rd-party |
 
-The commercial product runs **zero-shot on the user's own images**, nothing is trained on
+The product runs **zero-shot on the user's own images**; nothing it ships is trained on
 Fashionpedia images, so there is no image-licensing risk. Fashionpedia is used only to measure
-accuracy in the thesis.
+accuracy during development.
 
 **On the GPLv3 in that table:** this project talks to Neo4j over the Bolt network protocol,
 through a driver that is Apache 2.0. Two separate processes, no linking, and the server is
@@ -818,38 +830,45 @@ frontend/            React + TypeScript + Vite web app
   src/App.tsx        the app view and the admin view, one page, no router
   src/components/    Specimen, Reading, Flag, Derivation, Wardrobe, Mannequin,
                      Recommend, Preferences, Profile, Shop, Insights
+presentation/        self-contained animated deck (open index.html in a browser)
 docker-compose.yml   Neo4j service (image pinned to 5.26-community)
 ```
 
-## Roadmap
+## Status
 
-1. ✅ CLI: analyze + store + query
-2. ✅ Weather inference through the graph
-3. ✅ Dataset provenance in the graph (licence travels with the garment)
-4. ✅ Evaluation script: CLIP vs Fashionpedia labels (thesis metric)
-5. ✅ Five experiments: FashionCLIP and a wider label vocabulary won,
-   two-stage classification, prompt ensembling and background removal did not
-   (49.0% → 63.3%)
-6. ✅ Dev/test split frozen before any training
-7. ✅ Fine-tuning: 63.2% → 80.5% top-1 on dev (research only, never shipped)
-8. ✅ HTTP API over the pipeline
-9. ✅ React front end in `frontend/`, upload to answer to explanation
-10. ✅ Correction loop: graph now, training corpus for later
-11. ✅ Wardrobe: stored garments as photographs, organised by body region and
-    queried by clicking a tailor's dummy, with statistics over the contents
-12. ✅ Cloth-only background removal: keep the garment, drop the wearer
-13. ✅ Per-garment price and wash care, the two facts only the owner knows
-14. ✅ Fit recommender, weather-and-taste, with an honest missing-pieces list
-15. ✅ Gap analysis: what the wardrobe cannot dress for, season by season
-16. ✅ Value: total worth and the most / least valuable outfit
-17. ✅ Shop links to real retailers, no invented prices
-18. ✅ Admin statistics on their own page, separate from the owner's view
-19. One final run on the held-out test half, when nothing else will change
-20. Retrain on the corrections once there are enough of them, and report the
-    dev number before and after
-21. Conversational layer: LLM → Cypher over the graph, through parameterised
-    query templates and never free-form generated Cypher (seams in place, not
-    built)
+The system is complete and running. Everything below is built, tested and in
+the repository:
+
+- ✅ **CLI** — analyse, store, query, and inspect the correction corpus
+- ✅ **Weather inference through the graph**, derived by traversal, never predicted
+- ✅ **Dataset provenance** in the graph, so a garment's licence travels with it
+- ✅ **Evaluation harness** — CLIP vs Fashionpedia, full per-class report, both baselines
+- ✅ **FashionCLIP + a wider vocabulary** (49.0% → 63.3%); scale, prompt ensembling,
+  two-stage classification and background removal each measured and rejected
+- ✅ **Frozen dev/test split**, then **vision-tower fine-tuning** (63.2% → 80.5% on dev)
+- ✅ **HTTP API** over the whole pipeline
+- ✅ **React wardrobe app** — upload to answer to explanation, plus an admin statistics page
+- ✅ **Correction loop** — the graph is fixed immediately, the training corpus grows for later
+- ✅ **Cloth-only background removal** and **multi-garment segmentation** from one photo
+- ✅ **Wardrobe** — garments as photographs, organised by body region on a mannequin
+- ✅ **Price** (brand estimate + manual override) and **wash care** per garment
+- ✅ **Fit recommender** (weather + taste), **gap analysis**, and **most / least valuable outfit**
+- ✅ **Real retailer shop links**, with no invented prices
+- ✅ **Presentation deck** in `presentation/`, and a one-click `start.bat` launcher
+
+## Future work
+
+Left deliberately as extensions, none of them blocking:
+
+- A single run on the **held-out test half** once nothing else will change, and a
+  retrain on the corrections people submit, with the dev number reported before
+  and after.
+- A **conversational layer**: an LLM turning plain-language questions into Cypher
+  through parameterised query templates, never free-form generated queries,
+  because the graph has a single admin account. The seams are already in place.
+- **Widening the ontology** beyond the twelve categories to the footwear,
+  accessories and one-piece classes Fashionpedia also labels, and the warmth and
+  region tables to match.
 
 ## License
 

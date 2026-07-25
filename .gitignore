@@ -29,3 +29,6 @@ neo4j_data/
 # --- os ---
 Thumbs.db
 .DS_Store
+
+# local one-click launcher, machine-specific paths
+start.bat
