@@ -21,8 +21,17 @@ MIT (rembg) + Apache 2.0 (U2Net) -> clean for commercial use.
 import os
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 from rembg import new_session, remove
+
+# Hole filling needs scipy, which arrives with rembg rather than on its own. If
+# a future rembg drops it the pipeline still runs: masks go through unrepaired
+# and the hollow check below still throws the bad ones out.
+try:
+    from scipy import ndimage as _ndimage
+except ImportError:  # pragma: no cover - depends on how rembg was installed
+    _ndimage = None
 
 # u2net_cloth_seg segments clothing into upper / lower / full body regions and
 # returns the union, dropping the wearer. Override with REMBG_MODEL if a future
@@ -90,6 +99,22 @@ _REGION_NAMES = ["upper", "lower", "full"]
 # and not as a stray patch the segmentation left behind.
 _MIN_COVERAGE = 0.02
 
+# A garment fills most of the box it sits in: trousers cover the rectangle they
+# occupy, and so does a jumper. A mask covering only a sliver of its own box is
+# not a garment but the *outline* of one, which is what the segmentation leaves
+# when it loses a dark garment against a dark background: seams and hems
+# survive, the interior does not. on_white() then paints that missing interior
+# white, and the classifier reads white trousers off a photo of black ones.
+# Filling the interior fixes the ordinary case; whatever is still this hollow
+# afterwards is not worth classifying.
+_MIN_BBOX_FILL = 0.35
+
+# Closing runs before filling because binary_fill_holes only fills a region the
+# outline actually encloses; a hem broken by a few pixels leaks and nothing is
+# filled at all. Five pixels seals the usual gaps without swallowing the gap
+# between an arm and a torso.
+_CLOSE_RADIUS = 5
+
 
 def crop_to_content(rgba: Image.Image, margin: float = 0.05) -> Image.Image:
     """
@@ -109,6 +134,48 @@ def crop_to_content(rgba: Image.Image, margin: float = 0.05) -> Image.Image:
                       min(w, r + mx), min(h, b + my)))
 
 
+def _bbox_fill(mask: Image.Image) -> float:
+    """
+    How much of its own bounding box the mask covers. Coverage measures the
+    garment against the whole frame, which says how prominent it is; this
+    measures it against itself, which says whether it is solid or hollow.
+    """
+    solid = np.asarray(mask.convert("L")) >= 128
+    if not solid.any():
+        return 0.0
+    ys, xs = np.nonzero(solid)
+    box = (ys.max() - ys.min() + 1) * (xs.max() - xs.min() + 1)
+    return float(solid.sum() / box)
+
+
+def _repair_mask(mask: Image.Image) -> tuple[Image.Image, bool]:
+    """
+    Seal the outline, then fill what it encloses.
+
+    cut_out() gets this for free from rembg's post_process_mask, but the
+    per-region masks come straight out of session.predict() and never saw it,
+    and the per-region path is the one every upload takes. Returns the mask and
+    whether anything was actually recovered.
+
+    The model's own soft edge is kept where it had one: only the interior it
+    dropped is forced opaque, so the cutout does not gain a hard jagged border.
+    """
+    if _ndimage is None:
+        return mask, False
+    alpha = np.asarray(mask.convert("L"))
+    solid = alpha >= 128
+    if not solid.any():
+        return mask, False
+    structure = np.ones((_CLOSE_RADIUS, _CLOSE_RADIUS), dtype=bool)
+    filled = _ndimage.binary_fill_holes(
+        _ndimage.binary_closing(solid, structure=structure)
+    )
+    if int(filled.sum()) <= int(solid.sum()):
+        return mask, False
+    repaired = np.maximum(alpha, filled.astype(np.uint8) * 255)
+    return Image.fromarray(repaired, mode="L"), True
+
+
 def _coverage(mask: Image.Image) -> float:
     hist = mask.convert("L").histogram()
     nonzero = sum(hist[16:])  # anything not near-black counts as covered
@@ -126,9 +193,15 @@ def segment_garments(image: Image.Image) -> list[dict]:
     back as one garment; a photo of a whole outfit comes back as two or three,
     each cropped to itself and classified on its own.
 
-    Returns a list of {region, cutout (RGBA, cropped), coverage}, most prominent
-    first. Falls back to a single whole-image cutout when the per-region model is
-    not available, so the pipeline never comes back empty.
+    Each mask is repaired before use and then checked for being hollow, because
+    a mask that kept only a garment's seams reads as a white garment once it is
+    composited, and a wrong colour stated confidently is worse than a region
+    quietly dropped.
+
+    Returns a list of {region, cutout (RGBA, cropped), coverage, bbox_fill,
+    repaired}, most prominent first. Falls back to a single whole-image cutout
+    when the per-region model is not available or when every region was too
+    hollow to trust, so the pipeline never comes back empty.
     """
     rgba = image.convert("RGBA")
     session = _get_session()
@@ -144,12 +217,25 @@ def segment_garments(image: Image.Image) -> list[dict]:
             mask = mask.convert("L")
             if mask.size != rgba.size:
                 mask = mask.resize(rgba.size)
+            mask, repaired = _repair_mask(mask)
             cov = _coverage(mask)
-            if cov >= _MIN_COVERAGE:
-                cut = rgba.copy()
-                cut.putalpha(mask)
-                regions.append({"region": name, "cutout": crop_to_content(cut),
-                                "coverage": round(cov, 4)})
+            if cov < _MIN_COVERAGE:
+                continue
+            fill = _bbox_fill(mask)
+            if fill < _MIN_BBOX_FILL:
+                # Dropping the region is the honest move: with nothing to
+                # classify the photo falls through to the whole-image cutout
+                # below, whereas keeping it would hand CLIP a white rectangle
+                # and store its answer as the garment's colour.
+                print(f"remove_bg: '{name}' fills {fill:.0%} of its own box, "
+                      "still hollow after repair; dropping it rather than "
+                      "classifying the background")
+                continue
+            cut = rgba.copy()
+            cut.putalpha(mask)
+            regions.append({"region": name, "cutout": crop_to_content(cut),
+                            "coverage": round(cov, 4),
+                            "bbox_fill": round(fill, 4), "repaired": repaired})
 
     regions = _dedupe_regions(regions)
     if regions:

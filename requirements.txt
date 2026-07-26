@@ -9,6 +9,7 @@ torch
 transformers
 rembg
 onnxruntime
+scipy          # mask repair in remove_bg; arrives with rembg, pinned here because we import it directly
 
 # --- knowledge graph ---
 neo4j
