@@ -8,6 +8,12 @@ import type { OutfitValue, Tally, WardrobeProfile } from "../types";
  * for. Counts and sums over their own clothes, nothing about the model. The gap
  * list is the pointed part: it names the specific thing missing for each season.
  */
+/** "a, b and c" — a list a person would read aloud, not one joined by commas. */
+function joinWords(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
 function Palette({ rows, swatch }: { rows: Tally[]; swatch?: boolean }) {
   const max = Math.max(1, ...rows.map((r) => r.n));
   if (rows.length === 0) return <p className="reading-empty">nothing yet</p>;
@@ -211,15 +217,33 @@ export default function Profile({
                   ))}
                 </ul>
               ) : (
-                <p className="gap-ok">covered, upper and lower{gap.season !== "hot" && gap.season !== "warm" ? " and an outer layer" : ""}</p>
+                <p className="gap-ok">
+                  covered, head to foot
+                  {gap.season !== "hot" && gap.season !== "warm"
+                    ? ", with an outer layer"
+                    : ""}
+                </p>
+              )}
+              {/* what you will regret not having, kept apart from what you
+                  cannot leave the house without */}
+              {gap.advisable?.length > 0 && (
+                <p className="gap-advisable">
+                  In this weather you would also want something for{" "}
+                  {joinWords(
+                    gap.advisable.map((a) => `the ${a.replace(/^nothing for the /, "")}`)
+                  )}
+                  .
+                </p>
               )}
             </div>
           ))}
         </div>
         <p className="prose">
           A season is “ready” when the wardrobe has something warm enough for the
-          upper body, the lower body, and, for the cold seasons, a real outer
-          layer. Missing pieces are the honest shopping list.
+          upper body, the lower body, the feet, and, for the cold seasons, a real
+          outer layer. Below that line sit the things you would merely regret
+          being without — a hat in January is not the same kind of missing as
+          trousers. Missing pieces are the honest shopping list.
         </p>
       </div>
     </div>

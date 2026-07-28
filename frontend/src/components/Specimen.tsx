@@ -96,7 +96,9 @@ export default function Specimen({
           if (!disabled) take(e.dataTransfer.files[0]);
         }}
       >
-        <span className="drop-corner left">{file ? file.name.slice(0, 28) : "empty"}</span>
+        <span className="drop-corner left">
+          {file ? file.name.slice(0, 28) : "no specimen mounted"}
+        </span>
         <span className="drop-corner right">{sizeLabel}</span>
 
         {preview ? (
@@ -106,10 +108,10 @@ export default function Specimen({
             <span className="drop-icon">
               <Upload />
             </span>
-            <strong>drop a garment photo</strong>
+            <strong>mount a garment photograph</strong>
             <small>
-              or <span style={{ textDecoration: "underline" }}>click to pick</span>, or
-              paste from the clipboard
+              drop it here, <span style={{ textDecoration: "underline" }}>click to pick</span>,
+              or paste from the clipboard
             </small>
           </div>
         )}
@@ -119,6 +121,11 @@ export default function Specimen({
           type="file"
           accept="image/*"
           className="sr-only"
+          // the drop zone around this is the labelled control and opens the
+          // picker itself; leaving the input in the tab order gave keyboard
+          // users a second stop, one pixel wide and with no name to announce
+          tabIndex={-1}
+          aria-label="choose a garment photo"
           onChange={(e) => {
             take(e.target.files?.[0]);
             e.target.value = ""; // picking the same file twice must still fire

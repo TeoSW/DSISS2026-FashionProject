@@ -5,10 +5,19 @@ import Mannequin from "./Mannequin";
 import Shop from "./Shop";
 import { Wash } from "./icons";
 
+// One shelf per region, in the order you would get dressed. The note says what
+// kind of storage it is, which is the small piece of furniture language that
+// makes a cabinet read as a cabinet rather than as nine identical lists.
 const RAILS: { region: Region; title: string; note: string }[] = [
+  { region: "head", title: "head and face", note: "hat shelf" },
+  { region: "neck", title: "neck", note: "hook" },
   { region: "upper", title: "upper body", note: "hanging rail" },
+  { region: "hands", title: "hands and wrists", note: "drawer" },
+  { region: "waist", title: "waist", note: "belt rack" },
   { region: "lower", title: "lower body", note: "shelf" },
   { region: "full", title: "full length", note: "long rail" },
+  { region: "feet", title: "feet", note: "floor rack" },
+  { region: "carried", title: "carried", note: "hook" },
   { region: "unplaced", title: "unplaced", note: "no region in the ontology" },
 ];
 
@@ -73,12 +82,16 @@ function GarmentCard({
 
   return (
     <article className="garment">
-      <div className="hook" aria-hidden="true" />
+      <div className="strap" aria-hidden="true" />
       <div className="frame">
         {item.photo_url ? (
           <img src={photoUrl(item.photo_url)} alt={label} loading="lazy" />
         ) : (
-          <span className="no-photo">stored before pictures were kept</span>
+          <span className="no-photo">
+            {item.corrected || item.category
+              ? "no picture: nobody drew a box around this one"
+              : "stored before pictures were kept"}
+          </span>
         )}
         {item.price != null && (
           <span
@@ -104,11 +117,16 @@ function GarmentCard({
           {item.corrected && <span className="badge">corrected</span>}
         </p>
         <p className="garment-sub">
-          {[item.color, item.material, item.sleeve].filter(Boolean).join(" · ") ||
-            "no attributes"}
+          {[item.color, item.material, item.pattern, item.sleeve]
+            .filter(Boolean)
+            .join(" · ") || "no attributes"}
         </p>
         <div className="garment-meta">
-          <span className="warm">{item.warmth != null ? `${item.warmth}/11` : "?"}</span>
+          {/* a bag has a warmth score and it means nothing, so the card does not
+              print one: the seasons list is empty for the same reason */}
+          {item.seasons.length > 0 && (
+            <span className="warm">{item.warmth != null ? `${item.warmth}/11` : "?"}</span>
+          )}
           {item.seasons.map((s) => (
             <span className="season" key={s.name} title={s.temp_range}>
               {s.name}

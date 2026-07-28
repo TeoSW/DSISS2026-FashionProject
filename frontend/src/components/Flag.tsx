@@ -68,13 +68,16 @@ export default function Flag({
     return (
       <div className="flag">
         <div className="receipt">
-          <span>
-            <b>recorded</b> as {receipt.id}
-            {receipt.verdict === "correct" ? " (confirmed)" : " (corrected)"}
+          <span className="slip-head">
+            <b>{receipt.verdict === "correct" ? "confirmed" : "revised"}</b>
+            <span className="slip-id">{receipt.id}</span>
           </span>
           {Object.entries(receipt.corrections).map(([g, v]) => (
-            <span key={g}>
-              {g}: {before[g] ?? "?"} → {v}
+            <span className="slip-rev" key={g}>
+              <span className="group">{g}</span>
+              <s>{before[g] ?? "?"}</s>
+              <span aria-hidden="true">→</span>
+              <em>{v}</em>
             </span>
           ))}
           <span>
@@ -98,17 +101,17 @@ export default function Flag({
     return (
       <div className="flag">
         <div className="flag-ask">
-          <span>is this reading right?</span>
+          <span>does this determination hold?</span>
           <div className="spacer" />
           <button
             className="btn ghost small"
             disabled={busy}
             onClick={() => submit("correct")}
           >
-            yes, it is right
+            confirm it
           </button>
           <button className="btn small" disabled={busy} onClick={() => setMode("fixing")}>
-            no, fix it
+            revise it
           </button>
         </div>
         {error && <p className="banner bad">{error}</p>}
@@ -120,8 +123,10 @@ export default function Flag({
     <div className="flag">
       <div className="fix">
         <p className="hint">
-          Change only what is wrong. The corrected labels go into the knowledge
-          graph now and into the next fine-tuning run later.
+          Change only what is wrong. What the machine said is kept in the graph
+          beside your revision rather than replaced by it, so both readings stay
+          legible. The corrected labels go in now, and into the next fine-tuning
+          run later.
         </p>
 
         {groups.map((g) => {
@@ -185,7 +190,7 @@ export default function Flag({
             disabled={busy || (changed.length === 0 && !note.trim())}
           >
             {busy && <span className="spin" />}
-            send correction
+            record revision
           </button>
         </div>
       </div>

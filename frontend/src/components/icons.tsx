@@ -48,6 +48,17 @@ export function Moon({ size = 17 }: { size?: number }) {
   );
 }
 
+export function Auto({ size = 17 }: { size?: number }) {
+  // half light, half dark: the conventional glyph for "whatever the machine is
+  // set to", which is this app's default and needs its own mark
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base} aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 3.5a8.5 8.5 0 0 1 0 17Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function Wash({ size = 13 }: { size?: number }) {
   // a laundry tub, the way a care label draws one
   return (

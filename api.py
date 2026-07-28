@@ -29,13 +29,23 @@ from pydantic import BaseModel, Field
 
 from config import (
     ATTRIBUTES,
+    CATEGORIES_BY_REGION,
+    CATEGORY_KIND,
+    CATEGORY_REGION,
     CATEGORY_WARMTH,
     CLIP_MODEL,
     CURRENCY,
     CURRENCY_SYMBOL,
+    KINDS,
     MATERIAL_WARMTH,
+    NON_SEASONAL,
+    REGION_GROUPS,
+    REGION_TITLES,
+    REGIONS,
+    SEASON_ESSENTIALS,
     SEASONS,
     SLEEVE_MODIFIER,
+    SLEEVED_LAYERS,
     WASH_CARE,
 )
 from pipeline import closet
@@ -69,26 +79,56 @@ class Tag(BaseModel):
 class GarmentResult(BaseModel):
     analysis_id: str            # per-garment handle, what /feedback takes
     id: str | None              # graph id, null unless saved
-    region: str                 # which body part the cloth model cut it from
+    region: str                 # where on the body this piece belongs
+    kind: str | None            # clothing / footwear / headwear / accessory / ...
     tags: dict[str, Tag]
     warmth: int
     layer: str
+    seasonal: bool              # false for jewellery, bags, belts: no weather
     seasons: list[dict]
     summary: str
     cutout: str | None          # data URI of this garment's cutout
     saved: bool
     coverage: float             # share of the frame this garment covered
+    method: str                 # segment / band / probe -- how it was found
+    presence: float | None      # how sure we are anything is there at all
     brand: str | None
     price: float | None
     price_estimate: dict | None  # {tier, known, basis} when a price was guessed
 
 
 class Analysis(BaseModel):
-    """One upload. One photo can hold several garments, so this is a list."""
+    """One upload. One photo can hold several pieces, so this is a list."""
     analysis_id: str            # a handle for the whole upload
     count: int
     brand: str | None
     garments: list[GarmentResult]
+    # Everything the system saw but would not swear to, in plain sentences: a
+    # region it dropped and why, a piece it half-recognised, two instruments
+    # disagreeing. A guess printed as a sentence costs the reader nothing; a
+    # guess written into the knowledge graph costs them a wrong wardrobe.
+    notes: list[str] = Field(default_factory=list)
+
+
+class MissedItem(BaseModel):
+    """Something that was in the photograph and never got mentioned."""
+    analysis_id: str | None = Field(
+        None, description="the upload or garment this is about, when there is one")
+    category: str = Field(description="what was there, from the ontology")
+    note: str = ""
+    file: bool = Field(
+        True, description="also add it to the wardrobe, not just record the miss")
+
+
+class MissedResult(BaseModel):
+    id: str
+    category: str
+    region: str
+    kind: str | None
+    garment_id: str | None
+    filed: bool
+    graph_updated: bool
+    total_missed: int
 
 
 class Feedback(BaseModel):
@@ -180,7 +220,12 @@ async def allow_private_network(request, call_next):
 def _summary(tags: dict) -> str:
     def lbl(group):
         return tags.get(group, {}).get("label", "")
-    parts = [lbl("color"), lbl("material"), lbl("category")]
+
+    # "solid" is the default state of cloth and adds nothing to a name; every
+    # other pattern is the first thing you would say about the garment
+    pattern = lbl("pattern")
+    parts = [pattern if pattern and pattern != "solid" else "",
+             lbl("color"), lbl("material"), lbl("category")]
     line = " ".join(p for p in parts if p)
     sleeve = lbl("sleeve")
     return f"{line}, {sleeve}" if sleeve else line
@@ -209,10 +254,23 @@ def ontology():
         "attributes": ATTRIBUTES,
         "seasons": SEASONS,
         "material_warmth": MATERIAL_WARMTH,
-        "category_warmth": {k: {"warmth": w, "layer": l}
-                            for k, (w, l) in CATEGORY_WARMTH.items()},
+        "category_warmth": {
+            k: {"warmth": w, "layer": l, "region": CATEGORY_REGION[k],
+                "kind": CATEGORY_KIND[k], "seasonal": k not in NON_SEASONAL}
+            for k, (w, l) in CATEGORY_WARMTH.items()
+        },
         "sleeve_modifier": SLEEVE_MODIFIER,
+        "sleeved_layers": sorted(SLEEVED_LAYERS),
         "wash_care": WASH_CARE,
+        # the region tables, so the "what did it miss?" form can offer the
+        # right categories per region without shipping a second copy of the
+        # ontology into the browser
+        "regions": REGIONS,
+        "region_titles": REGION_TITLES,
+        "region_groups": REGION_GROUPS,
+        "categories_by_region": CATEGORIES_BY_REGION,
+        "kinds": KINDS,
+        "season_essentials": SEASON_ESSENTIALS,
         "currency": CURRENCY,
         "currency_symbol": CURRENCY_SYMBOL,
     }
@@ -239,67 +297,164 @@ async def analyze(
 
     # imported here, not at module level: the first import pulls in torch and
     # rembg, and /health should answer before that finishes
-    from pipeline import classify, pricing, remove_bg
+    from pipeline import classify, detect, pricing, remove_bg
 
     brand = brand.strip() or None
-    # one photo, possibly several garments: the cloth model segments upper /
-    # lower / full body, and each region that carries something is analysed on
-    # its own rather than being smeared into a single confused reading
-    pieces = remove_bg.segment_garments(image)
     upload_id = uuid.uuid4().hex[:12]
+    filename = file.filename or "upload"
+
+    # Pass one: the clothing. The cloth model segments upper / lower / full
+    # body, and each region that carries something is analysed on its own
+    # rather than being smeared into a single confused reading.
+    seg = remove_bg.segment_garments(image)
+    working = seg["image"]
+    notes: list[str] = list(seg["notes"])
 
     results: list[GarmentResult] = []
-    for piece in pieces:
+    found_regions: set[str] = set()
+
+    for piece in seg["pieces"]:
         rgba = piece["cutout"]
         rgb = remove_bg.on_white(rgba)
-        tags = classify.classify(rgb)
-        score = weather.warmth_score(tags)
-        layer = weather.layer_of(tags)
-        category = tags.get("category", {}).get("label")
-        est_price, est_info = pricing.estimate(brand, category)
-
-        garment_id, saved = None, False
-        seasons = weather.seasons_for(score)
-        if save:
-            garment_id = uuid.uuid4().hex[:12]
-            try:
-                photo = photos.save(garment_id, rgba)
-                graph.save_garment(
-                    garment_id, file.filename or "upload", tags,
-                    warmth=score, layer=layer, photo=photo, brand=brand,
-                    price=est_price, price_source="estimated" if est_price else None,
-                    region=piece["region"],
-                )
-                from_graph = graph.infer_weather(garment_id)
-                if from_graph:
-                    seasons = from_graph
-                saved = True
-            except Exception as e:
-                photos.delete(garment_id)
-                raise HTTPException(503, f"analysed fine, but the graph write failed: {e}")
-
-        analysis_id = uuid.uuid4().hex[:12]
-        _remember(analysis_id, rgb, rgba, tags, garment_id, file.filename or "upload")
-
-        results.append(GarmentResult(
-            analysis_id=analysis_id,
-            id=garment_id,
-            region=piece["region"],
-            tags={k: Tag(**v) for k, v in tags.items()},
-            warmth=score,
-            layer=layer,
-            seasons=seasons,
-            summary=_summary(tags),
-            cutout=_data_uri(rgba) if cutout else None,
-            saved=saved,
-            coverage=piece["coverage"],
-            brand=brand,
-            price=est_price,
-            price_estimate=est_info if est_price is not None else None,
+        # the segmenter already knows where this came from, so the classifier is
+        # asked which of the things worn *there* it is, rather than which of
+        # fifty-six pieces of clothing. When the whole-image fallback ran, its
+        # "full" means "the whole picture" and is not a region at all.
+        region = piece["region"] if piece.get("trusted", True) else None
+        read = classify.classify_piece(rgb, region=region)
+        if read["note"]:
+            notes.append(read["note"])
+        results.append(_file_piece(
+            tags=read["tags"], rgba=rgba, rgb=rgb, brand=brand, save=save,
+            filename=filename, cutout=cutout, coverage=piece["coverage"],
+            method="segment", presence=None, notes=notes,
         ))
+        found_regions.add(results[-1].region)
+
+    # Pass two: everything the cloth model has never seen. Bands measured off
+    # the clothing's own bounding box for the head, the feet, the neck and the
+    # waist; yes/no probes over the whole photograph for the things with no
+    # fixed place in it.
+    try:
+        extras = detect.find_extras(working, seg["clothing_box"], found_regions)
+    except Exception as e:  # noqa: BLE001 - the garments are already read
+        print(f"analyze: accessory pass failed ({e})")
+        extras = {"items": [], "observations": [
+            "The accessory pass could not run on this photo, so anything on the "
+            "feet, head, neck or wrists was not looked for. The garments above "
+            "are unaffected."
+        ]}
+
+    for item in extras["items"]:
+        # A band or a probe already established where this is, by geometry. The
+        # region cross-check exists to overrule a *mask* that cut a shirt out of
+        # the lower body, and applying it here does the opposite of its job: a
+        # waistband crop reads as trousers, gets refiled to the lower body, and
+        # the photograph comes back with its trousers counted twice. So extras
+        # are classified with the region locked.
+        if item["region"] in found_regions:
+            notes.append(
+                f"A {item['category']} was also picked up around the "
+                f"{REGION_TITLES.get(item['region'], item['region'])}, but that "
+                "region already has a garment cut from the photograph, so it was "
+                "treated as the same piece seen twice rather than a second one."
+            )
+            continue
+
+        crop = item["cutout"]
+        if crop is not None:
+            rgb = remove_bg.on_white(crop)
+            tags = classify.classify(rgb, region=item["region"])
+        else:
+            # found by a yes/no question about the whole photo, so there is no
+            # picture of the thing itself. Reading a colour off the whole
+            # photograph would give the outfit's colour, not the belt's, so the
+            # rest of the attributes are left for a person to fill in.
+            rgb, crop = None, None
+            tags = {"category": {"label": item["category"],
+                                 "confidence": item["confidence"]}}
+        results.append(_file_piece(
+            tags=tags, rgba=crop, rgb=rgb, brand=brand, save=save,
+            filename=filename, cutout=cutout, coverage=0.0,
+            method=item["method"], presence=item["presence"], notes=notes,
+        ))
+        found_regions.add(results[-1].region)
+
+    notes.extend(extras["observations"])
+    if not results:
+        notes.append("Nothing in this photograph could be read as a garment.")
+
+    # the whole photograph, remembered under the upload's own handle. A reported
+    # miss is about the picture rather than about any one garment in it, so this
+    # is the image that should travel with it into the corpus.
+    _remember(upload_id, working, None, {}, None, filename)
 
     return Analysis(analysis_id=upload_id, count=len(results),
-                    brand=brand, garments=results)
+                    brand=brand, garments=results, notes=notes)
+
+
+def _file_piece(*, tags: dict, rgba, rgb, brand, save: bool, filename: str,
+                cutout: bool, coverage: float, method: str,
+                presence: float | None, notes: list[str]) -> GarmentResult:
+    """
+    One piece, from tags to a stored garment.
+
+    Shared by both passes because the answer to "what is this and what weather
+    is it for" must not depend on which instrument found it: a boot detected in
+    a band and a boot uploaded on its own have to come out identical, or the
+    wardrobe holds two kinds of truth.
+    """
+    from pipeline import pricing
+
+    category = tags.get("category", {}).get("label")
+    region = CATEGORY_REGION.get(category or "", "unplaced")
+    score = weather.warmth_score(tags)
+    layer = weather.layer_of(tags)
+    seasons = weather.seasons_for(score, tags)
+    est_price, est_info = pricing.estimate(brand, category)
+
+    garment_id, saved = None, False
+    if save:
+        garment_id = uuid.uuid4().hex[:12]
+        try:
+            photo = photos.save(garment_id, rgba) if rgba is not None else None
+            graph.save_garment(
+                garment_id, filename, tags,
+                warmth=score, layer=layer, photo=photo, brand=brand,
+                price=est_price, price_source="estimated" if est_price else None,
+                region=region, detection=method,
+            )
+            from_graph = graph.infer_weather(garment_id)
+            if from_graph:
+                seasons = from_graph
+            saved = True
+        except Exception as e:
+            photos.delete(garment_id)
+            raise HTTPException(503, f"analysed fine, but the graph write failed: {e}")
+
+    analysis_id = uuid.uuid4().hex[:12]
+    _remember(analysis_id, rgb, rgba, tags, garment_id, filename)
+
+    return GarmentResult(
+        analysis_id=analysis_id,
+        id=garment_id,
+        region=region,
+        kind=CATEGORY_KIND.get(category or ""),
+        tags={k: Tag(**v) for k, v in tags.items()},
+        warmth=score,
+        layer=layer,
+        seasonal=weather.seasonal(tags),
+        seasons=seasons,
+        summary=_summary(tags),
+        cutout=_data_uri(rgba) if cutout and rgba is not None else None,
+        saved=saved,
+        coverage=coverage,
+        method=method,
+        presence=presence,
+        brand=brand,
+        price=est_price,
+        price_estimate=est_info if est_price is not None else None,
+    )
 
 
 @app.post("/feedback", response_model=FeedbackResult)
@@ -363,7 +518,7 @@ def submit_feedback(body: Feedback):
 
     warmth = weather.warmth_score(fixed)
     layer = weather.layer_of(fixed)
-    seasons = weather.seasons_for(warmth)
+    seasons = weather.seasons_for(warmth, fixed)
 
     graph_updated = garment_updated = filed = False
     try:
@@ -377,10 +532,15 @@ def submit_feedback(body: Feedback):
             # marked as a human answer. Saying "wrong, it is a hoodie" puts it
             # on the hoodie hook, which is the only place it belongs.
             garment_id = uuid.uuid4().hex[:12]
-            photo = photos.save(garment_id, remembered["cutout"])
+            # a piece found by a whole-photo probe has no picture of itself, so
+            # it is filed without one rather than not filed at all
+            cut = remembered.get("cutout")
+            photo = photos.save(garment_id, cut) if cut is not None else None
             graph.save_garment(garment_id, remembered["filename"], fixed,
                                warmth=warmth, layer=layer, photo=photo,
-                               source="human")
+                               source="human",
+                               region=CATEGORY_REGION.get(
+                                   fixed.get("category", {}).get("label", "")))
             graph.apply_correction(garment_id, body.corrections, warmth, layer)
             filed = garment_updated = True
 
@@ -410,6 +570,105 @@ def submit_feedback(body: Feedback):
         filed=filed,
         corpus_size=len(fb.load()),
     )
+
+
+@app.post("/missing", response_model=MissedResult)
+def report_missing(body: MissedItem):
+    """
+    Say what was in the photograph that the system never mentioned.
+
+    This is the other half of being wrong. /feedback handles "you called this a
+    shirt and it is a blouse"; there is no way to express "there were boots in
+    that photo" as a correction, because there is nothing to correct. Until this
+    endpoint existed the only failure the system could hear about was the one it
+    had already half-committed to.
+
+    Two things happen, and the second is optional:
+
+      1. the miss is recorded -- on disk, and as a Missing node pointing at the
+         Category it should have seen, which makes "what is this system blind
+         to" a Cypher query rather than an impression
+      2. unless `file` is false, the piece is added to the wardrobe there and
+         then, marked source='human', because a person naming a garment they
+         own is better evidence than anything the model produces
+
+    What it cannot do is give the piece a picture. Nobody drew a box around the
+    boots, so the garment is filed without one and the wardrobe card says so.
+    """
+    category = body.category.strip()
+    if category not in ATTRIBUTES["category"]:
+        raise HTTPException(
+            400,
+            f"'{category}' is not something this system knows. It knows "
+            f"{len(ATTRIBUTES['category'])} pieces across {len(REGIONS)} regions; "
+            "pick one of those, or say it in the note and it becomes a case for "
+            "widening the ontology.",
+        )
+
+    region = CATEGORY_REGION[category]
+    missing_id = uuid.uuid4().hex[:12]
+    remembered = _recent.get(body.analysis_id or "")
+
+    tags = {"category": {"label": category, "confidence": 1.0}}
+    warmth = weather.warmth_score(tags)
+    layer = weather.layer_of(tags)
+
+    garment_id = None
+    if body.file:
+        garment_id = uuid.uuid4().hex[:12]
+
+    fb.record_missing(
+        missing_id, category, region=region, note=body.note,
+        analysis_id=body.analysis_id, garment_id=garment_id, model=CLIP_MODEL,
+        image=remembered["image"] if remembered else None,
+    )
+
+    graph_updated = filed = False
+    try:
+        if garment_id:
+            graph.save_garment(
+                garment_id, remembered["filename"] if remembered else "reported",
+                tags, warmth=warmth, layer=layer, photo=None, source="human",
+                region=region, detection="reported",
+            )
+            filed = True
+        graph.save_missing(missing_id, category, region=region, note=body.note,
+                           analysis_id=body.analysis_id,
+                           garment_id=garment_id if filed else None)
+        graph_updated = True
+    except Exception as e:
+        # the disk record already succeeded; a dead database must not throw away
+        # what the person just told us
+        print(f"missing {missing_id} saved to disk but not to Neo4j: {e}")
+        garment_id = garment_id if filed else None
+
+    return MissedResult(
+        id=missing_id,
+        category=category,
+        region=region,
+        kind=CATEGORY_KIND.get(category),
+        garment_id=garment_id,
+        filed=filed,
+        graph_updated=graph_updated,
+        total_missed=len(fb.load_missing()),
+    )
+
+
+@app.get("/missing/stats")
+def missing_stats():
+    """
+    What this system is blind to, from both stores.
+
+    The region breakdown is the one that matters. Misses scattered across every
+    region are hard photographs; forty misses all on the feet are a system that
+    is not looking at feet, which is a fixable thing rather than a fact of life.
+    """
+    out = {"corpus": fb.missing_summary(), "graph": None}
+    try:
+        out["graph"] = graph.missing_stats()
+    except Exception as e:
+        out["graph_error"] = str(e)
+    return out
 
 
 @app.get("/feedback/stats")
@@ -456,8 +715,9 @@ def wardrobe(region: str | None = None):
     (Garment)->(Category)-[:WORN_ON]->(Region), so clicking the mannequin is a
     graph question and not a filter applied in the browser.
     """
-    if region and region not in ("upper", "lower", "full", "unplaced"):
-        raise HTTPException(400, "region must be upper, lower, full or unplaced")
+    if region and region not in (*REGIONS, "unplaced"):
+        raise HTTPException(
+            400, f"region must be one of {', '.join(REGIONS)} or unplaced")
     items = graph.wardrobe(region)
     for item in items:
         item["photo_url"] = f"/garments/{item['id']}/image" if item.get("photo") else None
@@ -589,11 +849,16 @@ def insights():
     two must not be presented as the same kind of number.
     """
     out = {"graph": graph.insights(), "photos": photos.usage(),
-           "feedback": fb.summary(), "model": CLIP_MODEL}
+           "feedback": fb.summary(), "missed": fb.missing_summary(),
+           "model": CLIP_MODEL}
     try:
         out["corrections"] = graph.correction_stats()
     except Exception as e:
         out["corrections_error"] = str(e)
+    try:
+        out["misses"] = graph.missing_stats()
+    except Exception as e:
+        out["misses_error"] = str(e)
     return out
 
 

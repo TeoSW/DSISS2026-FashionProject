@@ -31,6 +31,12 @@ from pathlib import Path
 
 FEEDBACK_DIR = Path("data/feedback")
 CORPUS = FEEDBACK_DIR / "corrections.jsonl"
+# Misses are kept in their own file rather than mixed into the corrections.
+# A correction is a labelled example of a garment the classifier saw and named
+# wrongly, and finetune.py can train on it directly. A miss is a labelled
+# example of something nothing was even looking at, which is evidence about the
+# detector and would only be noise in a classifier's training set.
+MISSED = FEEDBACK_DIR / "missed.jsonl"
 IMAGES = FEEDBACK_DIR / "images"
 
 # a verdict is one of these; "correct" is signal too, and cheaper to give
@@ -80,12 +86,48 @@ def record(feedback_id: str, verdict: str, predicted: dict, corrected: dict,
     return entry
 
 
-def load() -> list[dict]:
-    """Every correction ever recorded, oldest first. Bad lines are skipped."""
-    if not CORPUS.exists():
+def record_missing(missing_id: str, category: str, region: str | None = None,
+                   note: str = "", analysis_id: str | None = None,
+                   garment_id: str | None = None, model: str = "",
+                   image=None) -> dict:
+    """
+    Append one thing the system never saw, and archive the photo it was in.
+
+    This is the record of a miss, not of a mistake: nobody corrected a label,
+    somebody said a whole piece went unmentioned. The image is worth keeping for
+    the same reason a correction's is -- it is a labelled example of a garment
+    in a real photograph, and it is exactly the data a detector would need.
+    """
+    IMAGES.mkdir(parents=True, exist_ok=True)
+    image_path = None
+    if image is not None:
+        image_path = IMAGES / f"{missing_id}.png"
+        image.convert("RGB").save(image_path)
+
+    entry = {
+        "id": missing_id,
+        "created_at": _now(),
+        "kind": "missed",
+        "model": model,
+        "analysis_id": analysis_id,
+        "garment_id": garment_id,
+        "image": str(image_path).replace("\\", "/") if image_path else None,
+        "category": category,
+        "region": region,
+        "note": note.strip(),
+    }
+
+    MISSED.parent.mkdir(parents=True, exist_ok=True)
+    with MISSED.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
+
+
+def _read(path: Path) -> list[dict]:
+    if not path.exists():
         return []
     rows = []
-    for line in CORPUS.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
             continue
@@ -94,6 +136,36 @@ def load() -> list[dict]:
         except json.JSONDecodeError:
             continue
     return rows
+
+
+def load() -> list[dict]:
+    """Every correction ever recorded, oldest first. Bad lines are skipped."""
+    return _read(CORPUS)
+
+
+def load_missing() -> list[dict]:
+    """Every reported miss, oldest first."""
+    return _read(MISSED)
+
+
+def missing_summary() -> dict:
+    """
+    What people had to add by hand, counted per category and per region.
+
+    The region breakdown is the useful one. A scatter of misses across every
+    region is a hard photograph; forty misses all on the feet is a system that
+    is not looking at feet, and that is a fixable thing.
+    """
+    rows = load_missing()
+    per_category = Counter(r.get("category") for r in rows if r.get("category"))
+    per_region = Counter(r.get("region") for r in rows if r.get("region"))
+    return {
+        "total": len(rows),
+        "per_category": dict(per_category.most_common()),
+        "per_region": dict(per_region.most_common()),
+        "with_image": sum(1 for r in rows if r.get("image")),
+        "corpus": str(MISSED).replace("\\", "/"),
+    }
 
 
 def summary() -> dict:

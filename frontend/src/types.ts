@@ -2,9 +2,63 @@
 // to change with it; there is no code generation here on purpose, the contract
 // is small enough to read.
 
-export type Group = "category" | "material" | "style" | "color" | "sleeve";
+export type Group =
+  | "category"
+  | "material"
+  | "style"
+  | "color"
+  | "sleeve"
+  | "pattern";
 
-export const GROUPS: Group[] = ["category", "material", "style", "color", "sleeve"];
+export const GROUPS: Group[] = [
+  "category",
+  "material",
+  "style",
+  "color",
+  "sleeve",
+  "pattern",
+];
+
+// The nine places a thing can be worn or carried. Mirrors REGIONS in config.py.
+export type Region =
+  | "upper"
+  | "lower"
+  | "full"
+  | "feet"
+  | "head"
+  | "neck"
+  | "hands"
+  | "waist"
+  | "carried"
+  | "unplaced";
+
+export const REGIONS: Region[] = [
+  "upper",
+  "lower",
+  "full",
+  "feet",
+  "head",
+  "neck",
+  "hands",
+  "waist",
+  "carried",
+];
+
+export const REGION_TITLES: Record<Region, string> = {
+  upper: "upper body",
+  lower: "lower body",
+  full: "full length",
+  feet: "feet",
+  head: "head and face",
+  neck: "neck",
+  hands: "hands and wrists",
+  waist: "waist",
+  carried: "carried",
+  unplaced: "unplaced",
+};
+
+/** How a piece was found. Segmentation is the strongest, a probe the weakest. */
+export type Method = "segment" | "band" | "probe" | "reported";
 
 export interface Tag {
   label: string;
@@ -31,26 +85,44 @@ export interface PriceEstimate {
 export interface GarmentResult {
   analysis_id: string;
   id: string | null;
-  region: string;
+  region: Region;
+  kind: string | null;
   tags: Record<string, Tag>;
   warmth: number;
   layer: string;
+  seasonal: boolean;
   seasons: Season[];
   summary: string;
   cutout: string | null;
   saved: boolean;
   coverage: number;
+  method: Method;
+  presence: number | null;
   brand: string | null;
   price: number | null;
   price_estimate: PriceEstimate | null;
 }
 
-// The whole upload: what /analyze returns.
+// The whole upload: what /analyze returns. `notes` is everything the system saw
+// but would not swear to, in sentences — a region it dropped and why, a piece it
+// half-recognised, two instruments disagreeing.
 export interface Analysis {
   analysis_id: string;
   count: number;
   brand: string | null;
   garments: GarmentResult[];
+  notes: string[];
+}
+
+export interface MissedResult {
+  id: string;
+  category: string;
+  region: Region;
+  kind: string | null;
+  garment_id: string | null;
+  filed: boolean;
+  graph_updated: boolean;
+  total_missed: number;
 }
 
 export interface Health {
@@ -70,9 +142,22 @@ export interface Ontology {
   attributes: Record<string, string[]>;
   seasons: Season[];
   material_warmth: Record<string, number>;
-  category_warmth: Record<string, { warmth: number; layer: string }>;
+  category_warmth: Record<
+    string,
+    { warmth: number; layer: string; region: Region; kind: string; seasonal: boolean }
+  >;
   sleeve_modifier: Record<string, number>;
+  sleeved_layers: string[];
   wash_care: Record<string, WashCare>;
+  regions: Region[];
+  region_titles: Record<string, string>;
+  region_groups: Record<string, Group[]>;
+  categories_by_region: Record<string, string[]>;
+  kinds: string[];
+  season_essentials: Record<
+    string,
+    { regions: string[]; outer: boolean; min_outer_warmth: number; extras: string[] }
+  >;
   currency: string;
   currency_symbol: string;
 }
@@ -91,8 +176,6 @@ export interface FeedbackResult {
   corpus_size: number;
 }
 
-export type Region = "upper" | "lower" | "full" | "unplaced";
-
 export interface WardrobeItem {
   id: string;
   warmth: number | null;
@@ -102,10 +185,12 @@ export interface WardrobeItem {
   created_at: string | null;
   category: string | null;
   region: Region;
+  kind: string | null;
   material: string | null;
   style: string | null;
   color: string | null;
   sleeve: string | null;
+  pattern: string | null;
   category_confidence: number | null;
   material_confidence: number | null;
   color_confidence: number | null;
@@ -162,10 +247,25 @@ export interface Insights {
     by_material: Tally[];
     by_color: Tally[];
     by_style: Tally[];
+    by_pattern: Tally[];
+    by_kind: Tally[];
+    by_brand: Tally[];
     by_layer: Tally[];
     by_season: Tally[];
     warmth: { warmth: number; n: number }[];
     regions: Partial<Record<Region, number>>;
+  };
+  missed?: {
+    total: number;
+    per_category: Record<string, number>;
+    per_region: Record<string, number>;
+    with_image: number;
+  };
+  misses?: {
+    total: number;
+    filed: number;
+    by_category: Tally[];
+    by_region: Tally[];
   };
 }
 
@@ -235,6 +335,7 @@ export interface Recommendation {
   reasons: string[];
   outfit_warmth: number | null;
   missing: string[];
+  advisable: string[];
   complete: boolean;
 }
 
@@ -258,6 +359,7 @@ export interface Gap {
   fitting: number;
   ready: boolean;
   missing: string[];
+  advisable: string[];
 }
 
 export interface WardrobeProfile {
@@ -269,6 +371,8 @@ export interface WardrobeProfile {
   styles: Tally[];
   colors: Tally[];
   materials: Tally[];
+  patterns: Tally[];
+  kinds: Tally[];
   regions: Tally[];
   value: WardrobeValue;
   coverage: { name: string; temp_range: string; n: number }[];

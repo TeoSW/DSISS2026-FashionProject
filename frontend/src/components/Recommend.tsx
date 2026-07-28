@@ -149,6 +149,13 @@ export default function Recommend({
               </ul>
             </div>
           )}
+
+          {/* not the same kind of gap: you can go out without gloves */}
+          {rec.advisable?.length > 0 && (
+            <p className="outfit-advisable">
+              You would also want {rec.advisable.join(" and ")} in this weather.
+            </p>
+          )}
         </div>
       )}
     </div>

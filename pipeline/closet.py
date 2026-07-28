@@ -18,13 +18,39 @@ present it as if a model had learned it.
 from config import (
     CATEGORY_WARMTH,
     DEFAULT_WASH,
+    REGION_TITLES,
     SEASON_ESSENTIALS,
     SEASONS,
     WASH_CARE,
+    is_seasonal,
 )
 
 _SEASON = {s["name"]: s for s in SEASONS}
 _ORDER = [s["name"] for s in SEASONS]
+
+# Where each layer goes in an outfit. The first five are the torso-and-legs
+# layering the recommender has always used; the rest are the regions the
+# expanded ontology added, each of which is its own slot because you do not
+# choose between a hat and a scarf the way you choose between a jumper and a
+# cardigan.
+_LAYER_SLOT = {
+    "base": "top",
+    "mid": "top",
+    "outer": "outer",
+    "bottom": "bottom",
+    "full": "full",
+    "feet": "feet",
+    "head": "head",
+    "neck": "neck",
+    "hands": "hands",
+    "waist": "waist",
+    "carried": "carried",
+}
+
+# The slots an outfit is actually assembled from, in the order they are read
+# out. Bags and belts are owned and counted but never recommended: nobody needs
+# to be told to consider a belt.
+_OUTFIT_SLOTS = ["full", "top", "bottom", "outer", "feet", "head", "neck", "hands"]
 
 
 # ---------------------------------------------------------------------------
@@ -63,14 +89,7 @@ def _priced(items: list[dict]) -> list[dict]:
 
 def _slot(item: dict) -> str:
     """Which place in an outfit a garment fills, from its layer."""
-    layer = item.get("layer")
-    if layer == "full":
-        return "full"
-    if layer == "outer":
-        return "outer"
-    if layer == "bottom":
-        return "bottom"
-    return "top"  # base, mid, or unknown: something worn on the upper body
+    return _LAYER_SLOT.get(item.get("layer") or "", "top")
 
 
 def _outfit(items: list[dict], pick):
@@ -78,17 +97,21 @@ def _outfit(items: list[dict], pick):
     Build one outfit by choosing garments with `pick` (max or min by price).
 
     An outfit is either a full-body piece or a top and a bottom, plus an
-    optional outer layer. Only priced garments are considered, because an
-    outfit's value is undefined the moment one of its pieces has no price.
+    optional outer layer and whatever is on the feet. Only priced garments are
+    considered, because an outfit's value is undefined the moment one of its
+    pieces has no price -- and a pair of shoes is often the dearest thing in it,
+    which is exactly why footwear had to join this calculation.
     """
-    by_slot: dict[str, list[dict]] = {"full": [], "top": [], "bottom": [], "outer": []}
+    by_slot: dict[str, list[dict]] = {slot: [] for slot in _OUTFIT_SLOTS}
     for i in _priced(items):
-        by_slot[_slot(i)].append(i)
+        by_slot.setdefault(_slot(i), []).append(i)
 
     def best(slot):
-        return pick(by_slot[slot], key=lambda i: i["price"]) if by_slot[slot] else None
+        pool = by_slot.get(slot) or []
+        return pick(pool, key=lambda i: i["price"]) if pool else None
 
     top, bottom, full, outer = best("top"), best("bottom"), best("full"), best("outer")
+    feet = best("feet")
 
     # a top-and-bottom outfit, or a one-piece, whichever is possible; when both
     # are, keep the one whose base value is more extreme in the chosen direction
@@ -102,8 +125,8 @@ def _outfit(items: list[dict], pick):
     elif full:
         chosen = [full]
 
-    if outer and chosen:
-        chosen = chosen + [outer]
+    if chosen:
+        chosen = chosen + [x for x in (outer, feet) if x]
 
     return chosen
 
@@ -172,6 +195,8 @@ def profile(items: list[dict]) -> dict:
     colors = _tally(items, "color")
     materials = _tally(items, "material")
     regions = _tally(items, "region")
+    patterns = _tally(items, "pattern")
+    kinds = _tally(items, "kind")
 
     return {
         "count": len(items),
@@ -180,6 +205,8 @@ def profile(items: list[dict]) -> dict:
         "styles": styles,
         "colors": colors,
         "materials": materials,
+        "patterns": patterns,
+        "kinds": kinds,
         "regions": regions,
         "value": outfit_value(items),
         "coverage": season_coverage(items),
@@ -191,6 +218,16 @@ def profile(items: list[dict]) -> dict:
 # Weather coverage and the gaps in it
 # ---------------------------------------------------------------------------
 def _fits(item: dict, season: dict) -> bool:
+    """
+    Whether this piece is wearable in this weather.
+
+    A ring has a warmth score, because the arithmetic is the same arithmetic for
+    everything, and it means nothing: is_seasonal keeps jewellery, bags and
+    belts out of every season window so a wardrobe is never declared ready for
+    winter on the strength of a bracelet.
+    """
+    if not is_seasonal(item.get("category")):
+        return False
     w = item.get("warmth")
     return w is not None and season["warmth_min"] <= w <= season["warmth_max"]
 
@@ -211,10 +248,15 @@ def gaps(items: list[dict]) -> list[dict]:
 
     For each season, take the garments warm enough for it and ask whether they
     cover the body: something for the upper half, something for the lower half,
-    and for the cold seasons an actual outer layer. A one-piece (a dress) covers
-    both halves at once. Whatever is missing is reported as a concrete thing to
-    acquire, which is the useful form of the answer, more than a coverage
-    percentage would be.
+    something on the feet, and for the cold seasons an actual outer layer. A
+    one-piece (a dress) covers both halves at once. Whatever is missing is
+    reported as a concrete thing to acquire, which is the useful form of the
+    answer, more than a coverage percentage would be.
+
+    `extras` are the regions that stop being decorative once it is genuinely
+    cold -- a head, a neck, a pair of hands. They are reported separately from
+    the essentials because going out in January without gloves is a choice, and
+    going out without trousers is not.
     """
     out = []
     for s in SEASONS:
@@ -227,7 +269,7 @@ def gaps(items: list[dict]) -> list[dict]:
             region = i.get("region")
             if region == "full":
                 covered.update(("upper", "lower"))
-            elif region in ("upper", "lower"):
+            elif region:
                 covered.add(region)
             if i.get("layer") == "outer":
                 has_outer = True
@@ -235,10 +277,14 @@ def gaps(items: list[dict]) -> list[dict]:
         missing = []
         for region in need["regions"]:
             if region not in covered:
-                where = "upper body" if region == "upper" else "lower body"
-                missing.append(f"nothing for the {where}")
+                missing.append(f"nothing for the {REGION_TITLES.get(region, region)}")
         if need["outer"] and not has_outer:
             missing.append("no insulating outer layer (a coat or heavy jacket)")
+
+        advisable = [
+            f"nothing for the {REGION_TITLES.get(region, region)}"
+            for region in need.get("extras", []) if region not in covered
+        ]
 
         out.append({
             "season": s["name"],
@@ -246,6 +292,7 @@ def gaps(items: list[dict]) -> list[dict]:
             "fitting": len(fitting),
             "ready": not missing,
             "missing": missing,
+            "advisable": advisable,
         })
     return out
 
@@ -312,10 +359,13 @@ def recommend(items: list[dict], prefs: dict, season: str | None = None) -> dict
         pool.sort(key=lambda i: (-_score(i, prefs), abs((i.get("warmth") or 0) - target)))
         return pool
 
-    tops = suitable([i for i in items if _slot(i) == "top"])
-    bottoms = suitable([i for i in items if _slot(i) == "bottom"])
-    fulls = suitable([i for i in items if _slot(i) == "full"])
-    outers = suitable([i for i in items if _slot(i) == "outer"])
+    def pool(slot):
+        return suitable([i for i in items if _slot(i) == slot])
+
+    tops, bottoms = pool("top"), pool("bottom")
+    fulls, outers = pool("full"), pool("outer")
+    shoes = pool("feet")
+    extras = {region: pool(region) for region in SEASON_ESSENTIALS[season]["extras"]}
 
     chosen, reasons = [], []
     need_outer = SEASON_ESSENTIALS[season]["outer"]
@@ -337,6 +387,17 @@ def recommend(items: list[dict], prefs: dict, season: str | None = None) -> dict
         chosen.append(outers[0])
         reasons.append(f"{_describe(outers[0])} over it for the cold")
 
+    # shoes are not optional in any weather, which is why they are chosen
+    # unconditionally rather than only when the season asks for them
+    if shoes:
+        chosen.append(shoes[0])
+        reasons.append(f"{_describe(shoes[0])} on your feet")
+
+    for region, pieces in extras.items():
+        if pieces:
+            chosen.append(pieces[0])
+            reasons.append(f"{_describe(pieces[0])} for the {REGION_TITLES[region]}")
+
     missing = []
     covered = {_slot(i) for i in chosen}
     if "full" not in covered:
@@ -344,8 +405,15 @@ def recommend(items: list[dict], prefs: dict, season: str | None = None) -> dict
             missing.append("a top warm enough for this weather")
         if "bottom" not in covered:
             missing.append("something for the lower body")
-    if need_outer and not any(_slot(i) == "outer" for i in chosen):
+    if need_outer and "outer" not in covered:
         missing.append("an outer layer this warm")
+    if "feet" not in covered:
+        missing.append("shoes for this weather")
+
+    advisable = [
+        f"something for the {REGION_TITLES[region]}"
+        for region in extras if region not in covered
+    ]
 
     total_warmth = None
     if chosen:
@@ -363,6 +431,7 @@ def recommend(items: list[dict], prefs: dict, season: str | None = None) -> dict
         "reasons": reasons,
         "outfit_warmth": total_warmth,
         "missing": missing,
+        "advisable": advisable,
         "complete": not missing,
     }
 

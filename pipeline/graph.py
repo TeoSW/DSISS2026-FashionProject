@@ -4,15 +4,25 @@ Write garment tags into Neo4j as a knowledge graph and query them back.
 
 Graph shape:
   (Garment {id, image_path, warmth, layer})
-      -[:HAS_CATEGORY]-> (Category {name, warmth, layer})
-      -[:MADE_OF]------> (Material {name, warmth})
+      -[:HAS_CATEGORY]-> (Category {name, warmth, layer, base_price, seasonal})
+      -[:MADE_OF]------> (Material {name, warmth, wash_temp, wash_cycle})
       -[:HAS_STYLE]----> (Style {name})
       -[:HAS_COLOR]----> (Color {name})
       -[:HAS_SLEEVE]---> (Sleeve {name})
+      -[:HAS_PATTERN]--> (Pattern {name})
+      -[:BY_BRAND]-----> (Brand {name, tier}) -[:PRICED_AS]-> (Tier {multiplier})
 
 Plus a seeded ontology that no image touches:
-  (Category) -[:WORN_ON]-> (Region {name})        upper / lower / full
+  (Category) -[:WORN_ON]-> (Region {name, title})   nine of them: upper, lower,
+                                                    full, feet, head, neck,
+                                                    hands, waist, carried
+  (Category) -[:IS_A]-> (Kind {name})               clothing / footwear /
+                                                    headwear / accessory /
+                                                    jewellery / bag
+  (Material) -[:WASHED_ON]-> (WashCycle {name})
   (Season {name, temp_range, warmth_min, warmth_max}) -[:COLDER_THAN]-> (Season)
+  (Season) -[:REQUIRES]-> (Region)                  cannot leave without it
+  (Season) -[:ADVISES]-> (Region)                   will regret not having one
   (Dataset {name, license, usage}) -[:HAS_CLASS]-> (DatasetClass) -[:MAPS_TO]-> (Category)
   (Garment) -[:FROM_DATASET]-> (Dataset)
 
@@ -20,6 +30,12 @@ And what people say back (see pipeline/feedback.py):
   (Correction {id, verdict, note, created_at}) -[:ABOUT]-> (Garment)
   (Correction) -[:PREDICTED {group, confidence}]-> (Category|Material|...)
   (Correction) -[:SHOULD_BE {group}]-> (Category|Material|...)
+  (Missing {id, note, region, created_at}) -[:SHOULD_HAVE_SEEN]-> (Category)
+  (Missing) -[:FILED_AS]-> (Garment)
+
+A Correction is the model naming something wrongly. A Missing is the model not
+naming it at all, which is a different failure with a different fix, and until
+there was a node for it the system had no way to hear about it.
 
 Every attribute edge carries source: 'model' or 'human'. That one property is
 what lets the graph hold a corrected fact and a predicted one side by side and
@@ -39,15 +55,28 @@ from neo4j import GraphDatabase
 
 from config import (
     ATTRIBUTES,
+    BRAND_TIERS,
+    CATEGORIES,
+    CATEGORY_BASE_PRICE,
+    CATEGORY_KIND,
     CATEGORY_REGION,
     CATEGORY_WARMTH,
     DATASETS,
+    DEFAULT_WASH,
     FASHION_MNIST_MAP,
+    FASHIONPEDIA_CATEGORY_MAP,
+    KINDS,
     MATERIAL_WARMTH,
     NEO4J_PASSWORD,
     NEO4J_URI,
     NEO4J_USER,
+    NON_SEASONAL,
+    REGION_TITLES,
+    REGIONS,
+    SEASON_ESSENTIALS,
     SEASONS,
+    TIER_MULTIPLIER,
+    WASH_CARE,
 )
 
 # attribute group -> (relationship type, node label)
@@ -57,15 +86,17 @@ _REL = {
     "style": ("HAS_STYLE", "Style"),
     "color": ("HAS_COLOR", "Color"),
     "sleeve": ("HAS_SLEEVE", "Sleeve"),
+    "pattern": ("HAS_PATTERN", "Pattern"),
 }
 
 _NODE_LABELS = [
-    "Garment", "Category", "Material", "Style", "Color", "Sleeve", "Season",
-    "Dataset", "DatasetClass", "Correction", "Region",
+    "Garment", "Category", "Material", "Style", "Color", "Sleeve", "Pattern",
+    "Season", "Region", "Kind", "Brand", "Tier", "WashCycle",
+    "Dataset", "DatasetClass", "Correction", "Missing",
 ]
 
 # these are keyed by id, everything else by name
-_ID_KEYED = {"Garment", "Correction"}
+_ID_KEYED = {"Garment", "Correction", "Missing"}
 
 
 @contextmanager
@@ -111,25 +142,63 @@ def seed_ontology() -> None:
                 f"FOR (n:{label}) REQUIRE n.{key} IS UNIQUE"
             )
 
+        # Materials carry their own care instruction, and are linked to the wash
+        # cycle they share with other fibres, so "what in here is hand-wash
+        # only" is a traversal rather than a lookup table in Python.
         s.run(
             """
             UNWIND $rows AS row
             MERGE (m:Material {name: row.name})
-            SET m.warmth = row.warmth
+            SET m.warmth = row.warmth, m.wash_temp = row.temp_c,
+                m.wash_cycle = row.cycle, m.wash_note = row.note
+            WITH m, row
+            MERGE (w:WashCycle {name: row.cycle})
+            MERGE (m)-[:WASHED_ON]->(w)
             """,
-            rows=[{"name": k, "warmth": v} for k, v in MATERIAL_WARMTH.items()],
+            rows=[
+                {"name": k, "warmth": v,
+                 **{kk: WASH_CARE.get(k, DEFAULT_WASH)[kk]
+                    for kk in ("temp_c", "cycle", "note")}}
+                for k, v in MATERIAL_WARMTH.items()
+            ],
         )
 
+        # Every category the ontology knows, with everything knowable about it
+        # that is not a picture: how much it insulates, where it sits in an
+        # outfit, roughly what it costs, and whether its warmth means anything
+        # about the weather at all.
         s.run(
             """
             UNWIND $rows AS row
             MERGE (c:Category {name: row.name})
-            SET c.warmth = row.warmth, c.layer = row.layer
+            SET c.warmth = row.warmth, c.layer = row.layer,
+                c.base_price = row.base_price, c.seasonal = row.seasonal
             """,
             rows=[
-                {"name": k, "warmth": w, "layer": layer}
-                for k, (w, layer) in CATEGORY_WARMTH.items()
+                {"name": name, "warmth": w, "layer": layer,
+                 "base_price": CATEGORY_BASE_PRICE.get(name),
+                 "seasonal": name not in NON_SEASONAL}
+                for name, (w, layer) in CATEGORY_WARMTH.items()
             ],
+        )
+
+        # What sort of thing each category is. Region says where it goes, kind
+        # says what it is, and the two together are how the graph answers
+        # "show me every accessory" without naming thirty categories.
+        s.run("UNWIND $names AS n MERGE (k:Kind {name: n})", names=KINDS)
+        # A category belongs to exactly one kind, so the old edge goes before
+        # the new one arrives. MERGE alone only ever adds: moving sunglasses
+        # from "accessory" to "eyewear" and re-seeding left it filed under both,
+        # and every count that traversed IS_A was then wrong by two.
+        s.run("MATCH (:Category)-[r:IS_A]->(:Kind) DELETE r")
+        s.run(
+            """
+            UNWIND $rows AS row
+            MATCH (c:Category {name: row.category})
+            MATCH (k:Kind {name: row.kind})
+            MERGE (c)-[:IS_A]->(k)
+            """,
+            rows=[{"category": c, "kind": k} for c, k in CATEGORY_KIND.items()],
         )
 
         s.run(
@@ -157,42 +226,107 @@ def seed_ontology() -> None:
             pairs=pairs,
         )
 
-        # Which part of the body each category is worn on. The two-stage
-        # experiment used this table as a prompt trick and it did not pay off;
-        # here it earns its keep as structure, because it is what the wardrobe
-        # is organised by. Clicking the mannequin runs this traversal.
+        # Which part of the body each category is worn on. Nine regions now, not
+        # three: the ontology covers a whole outfit, so the graph has somewhere
+        # to hang a boot, a beanie, a belt and a bag. Clicking the mannequin
+        # runs this traversal.
         s.run(
             """
             UNWIND $rows AS row
-            MERGE (r:Region {name: row.region})
-            WITH r, row
+            MERGE (r:Region {name: row.name})
+            SET r.title = row.title, r.position = row.position
+            """,
+            rows=[{"name": r, "title": REGION_TITLES.get(r, r), "position": i}
+                  for i, r in enumerate(REGIONS)],
+        )
+        # same rule as IS_A: one region per category, so re-seeding after moving
+        # one has to remove where it used to live
+        s.run("MATCH (:Category)-[r:WORN_ON]->(:Region) DELETE r")
+        s.run(
+            """
+            UNWIND $rows AS row
             MATCH (c:Category {name: row.category})
+            MATCH (r:Region {name: row.region})
             MERGE (c)-[:WORN_ON]->(r)
             """,
             rows=[{"category": c, "region": r} for c, r in CATEGORY_REGION.items()],
         )
 
+        # What each season demands of a wardrobe, as edges rather than as a
+        # table read in Python. REQUIRES is "you cannot leave the house without
+        # this"; ADVISES is "in January you will regret not having one".
+        for rel, key in (("REQUIRES", "regions"), ("ADVISES", "extras")):
+            s.run(
+                f"""
+                UNWIND $rows AS row
+                MATCH (s:Season {{name: row.season}})
+                MATCH (r:Region {{name: row.region}})
+                MERGE (s)-[:{rel}]->(r)
+                """,
+                rows=[{"season": season, "region": region}
+                      for season, need in SEASON_ESSENTIALS.items()
+                      for region in need.get(key, [])],
+            )
+
         # the label vocabulary CLIP chooses from, so the graph shows every
         # possible answer and not only the ones some photo happened to hit
         for group, node_label in (
-            ("style", "Style"), ("color", "Color"), ("sleeve", "Sleeve")
+            ("style", "Style"), ("color", "Color"), ("sleeve", "Sleeve"),
+            ("pattern", "Pattern"),
         ):
             s.run(
                 f"UNWIND $names AS n MERGE (x:{node_label} {{name: n}})",
                 names=ATTRIBUTES[group],
             )
 
+        _seed_brands(s)
         _seed_datasets(s)
+
+
+def _seed_brands(s) -> None:
+    """
+    Brands as nodes, not as a string on a garment.
+
+    A brand was a property, which meant "what do I own by Zara, and what is the
+    whole lot worth" could not be asked of the graph at all. As nodes with a
+    market tier behind them, it is one traversal -- and the tier that scales the
+    price estimate stops being a private dictionary inside pricing.py.
+    """
+    s.run(
+        """
+        UNWIND $rows AS row
+        MERGE (t:Tier {name: row.name})
+        SET t.multiplier = row.multiplier
+        """,
+        rows=[{"name": k, "multiplier": v} for k, v in TIER_MULTIPLIER.items()],
+    )
+    s.run(
+        """
+        UNWIND $rows AS row
+        MERGE (b:Brand {name: row.name})
+        SET b.tier = row.tier
+        WITH b, row
+        MATCH (t:Tier {name: row.tier})
+        MERGE (b)-[:PRICED_AS]->(t)
+        """,
+        rows=[{"name": k, "tier": v} for k, v in BRAND_TIERS.items()],
+    )
 
 
 def _seed_datasets(s) -> None:
     """
     Where images may come from and what may be done with them (see scraper.py).
 
-    Each Fashion-MNIST class becomes a node linked to the Category it
-    corresponds to; the four classes with no counterpart (bags, three kinds of
-    footwear) stay unlinked on purpose -- that dangling edge is the honest
-    picture of how far the baseline dataset covers this ontology.
+    Every class of both datasets becomes a node linked to the Category it
+    corresponds to, and the ones that still map to nothing stay deliberately
+    unlinked: that dangling edge is the honest picture of how far a dataset
+    covers this ontology, and it is a query rather than a paragraph.
+
+    All ten Fashion-MNIST classes map now. Before the ontology grew, four of
+    them -- a bag and three kinds of footwear -- had nowhere to go, which is
+    exactly the gap this expansion was for. Fashionpedia is at twenty-two of
+    twenty-seven item classes, the remainder being a cape, a jumpsuit variant,
+    a leg warmer and an umbrella.
     """
     s.run(
         """
@@ -204,19 +338,29 @@ def _seed_datasets(s) -> None:
         rows=DATASETS,
     )
 
-    rows = [
-        {"key": f"fashion_mnist/{cls}", "cls": cls, "idx": i, "category": cat}
-        for i, (cls, cat) in enumerate(FASHION_MNIST_MAP.items())
-    ]
+    _seed_dataset_classes(
+        s, "fashion_mnist",
+        [{"key": f"fashion_mnist/{cls}", "cls": cls, "idx": i, "category": cat}
+         for i, (cls, cat) in enumerate(FASHION_MNIST_MAP.items())],
+    )
+    _seed_dataset_classes(
+        s, "fashionpedia",
+        [{"key": f"fashionpedia/{idx}", "cls": cat or f"class {idx}",
+          "idx": idx, "category": cat}
+         for idx, cat in FASHIONPEDIA_CATEGORY_MAP.items()],
+    )
+
+
+def _seed_dataset_classes(s, dataset: str, rows: list[dict]) -> None:
     s.run(
         """
-        MATCH (d:Dataset {name: 'fashion_mnist'})
+        MATCH (d:Dataset {name: $dataset})
         UNWIND $rows AS row
         MERGE (k:DatasetClass {name: row.key})
-        SET k.class_name = row.cls, k.label_id = row.idx, k.dataset = 'fashion_mnist'
+        SET k.class_name = row.cls, k.label_id = row.idx, k.dataset = $dataset
         MERGE (d)-[:HAS_CLASS]->(k)
         """,
-        rows=rows,
+        dataset=dataset, rows=rows,
     )
     s.run(
         """
@@ -237,7 +381,7 @@ def save_garment(garment_id: str, image_path: str, tags: dict,
                  dataset: str | None = None, photo: str | None = None,
                  source: str = "model", brand: str | None = None,
                  price: float | None = None, price_source: str | None = None,
-                 region: str | None = None) -> None:
+                 region: str | None = None, detection: str | None = None) -> None:
     """
     tags is the dict returned by classify(), e.g.
       {"category": {"label": "jeans", "confidence": 0.83}, ...}
@@ -258,10 +402,11 @@ def save_garment(garment_id: str, image_path: str, tags: dict,
             ON CREATE SET g.created_at = datetime()
             SET g.image_path = $path, g.warmth = $warmth, g.layer = $layer,
                 g.photo = $photo, g.source = $source, g.brand = $brand,
-                g.detected_region = $region
+                g.detected_region = $region, g.detection = $detection
             """,
             id=garment_id, path=image_path, warmth=warmth, layer=layer,
             photo=photo, source=source, brand=brand, region=region,
+            detection=detection,
         )
         if price is not None:
             s.run(
@@ -280,6 +425,19 @@ def save_garment(garment_id: str, image_path: str, tags: dict,
                 MERGE (g)-[:FROM_DATASET]->(d)
                 """,
                 id=garment_id, dataset=dataset,
+            )
+        if brand:
+            # the brand is kept as a property too, because the wardrobe card
+            # reads it off the garment and should not need a join to draw a
+            # chip; the edge is what makes "everything I own by Zara, and what
+            # it is worth" a question the graph can answer
+            s.run(
+                """
+                MATCH (g:Garment {id: $id})
+                MERGE (b:Brand {name: $brand})
+                MERGE (g)-[:BY_BRAND]->(b)
+                """,
+                id=garment_id, brand=brand.strip().lower(),
             )
         for group, (rel, node_label) in _REL.items():
             if group not in tags:
@@ -312,9 +470,12 @@ def infer_weather(garment_id: str) -> list[dict]:
             MATCH (g:Garment {id: $id})
             OPTIONAL MATCH (g)-[:MADE_OF]->(m:Material)
             OPTIONAL MATCH (g)-[:HAS_CATEGORY]->(c:Category)
-            WITH g,
+            WITH g, c,
                  coalesce(g.warmth,
                           coalesce(m.warmth, 2) + coalesce(c.warmth, 2)) AS score
+            // a ring has a warmth score and it means nothing: categories marked
+            // seasonal = false claim no window rather than a hot-weather one
+            WHERE coalesce(c.seasonal, true)
             MATCH (s:Season)
             WHERE score >= s.warmth_min AND score <= s.warmth_max
             RETURN s.name AS name, s.temp_range AS temp_range, score AS score
@@ -377,16 +538,19 @@ def wardrobe(region: str | None = None) -> list[dict]:
             MATCH (g:Garment)
             OPTIONAL MATCH (g)-[rc:HAS_CATEGORY]->(c:Category)
             OPTIONAL MATCH (c)-[:WORN_ON]->(r:Region)
+            OPTIONAL MATCH (c)-[:IS_A]->(kd:Kind)
             OPTIONAL MATCH (g)-[rm:MADE_OF]->(m:Material)
             OPTIONAL MATCH (g)-[rs:HAS_STYLE]->(st:Style)
             OPTIONAL MATCH (g)-[rk:HAS_COLOR]->(col:Color)
             OPTIONAL MATCH (g)-[rl:HAS_SLEEVE]->(sl:Sleeve)
-            WITH g, c, r, m, st, col, sl, rc, rm, rs, rk, rl,
-                 [x IN [rc, rm, rs, rk, rl] WHERE x.source = 'human'] AS human
+            OPTIONAL MATCH (g)-[rp:HAS_PATTERN]->(pt:Pattern)
+            WITH g, c, r, kd, m, st, col, sl, pt, rc, rm, rs, rk, rl, rp,
+                 [x IN [rc, rm, rs, rk, rl, rp] WHERE x.source = 'human'] AS human
             WHERE $region IS NULL OR r.name = $region
             OPTIONAL MATCH (se:Season)
-              WHERE g.warmth >= se.warmth_min AND g.warmth <= se.warmth_max
-            WITH g, c, r, m, st, col, sl, rc, rm, rk, human,
+              WHERE coalesce(c.seasonal, true)
+                AND g.warmth >= se.warmth_min AND g.warmth <= se.warmth_max
+            WITH g, c, r, kd, m, st, col, sl, pt, rc, rm, rk, human,
                  collect(DISTINCT {name: se.name, temp_range: se.temp_range}) AS seasons
             RETURN g.id AS id,
                    g.warmth AS warmth,
@@ -402,10 +566,12 @@ def wardrobe(region: str | None = None) -> list[dict]:
                    g.wash_note AS wash_note,
                    c.name AS category,
                    coalesce(r.name, 'unplaced') AS region,
+                   kd.name AS kind,
                    m.name AS material,
                    st.name AS style,
                    col.name AS color,
                    sl.name AS sleeve,
+                   pt.name AS pattern,
                    rc.confidence AS category_confidence,
                    rm.confidence AS material_confidence,
                    rk.confidence AS color_confidence,
@@ -556,6 +722,29 @@ def insights() -> dict:
             RETURN x.name AS name, count(*) AS n ORDER BY n DESC, name
             """
         )
+        by_pattern = tally(
+            """
+            MATCH (g:Garment)-[:HAS_PATTERN]->(p:Pattern)
+            RETURN p.name AS name, count(*) AS n ORDER BY n DESC, name
+            """
+        )
+        # what sort of thing the wardrobe is made of -- clothing, footwear,
+        # headwear, accessories, jewellery, bags. One traversal, because kind
+        # hangs off the category and not off the garment.
+        by_kind = tally(
+            """
+            MATCH (g:Garment)-[:HAS_CATEGORY]->(:Category)-[:IS_A]->(k:Kind)
+            RETURN k.name AS name, count(*) AS n ORDER BY n DESC, name
+            """
+        )
+        by_brand = tally(
+            """
+            MATCH (g:Garment)-[:BY_BRAND]->(b:Brand)
+            RETURN b.name AS name, count(*) AS n, b.tier AS tier,
+                   sum(coalesce(g.price, 0)) AS value
+            ORDER BY n DESC, name
+            """
+        )
         by_layer = tally(
             """
             MATCH (g:Garment) WHERE g.layer IS NOT NULL
@@ -614,6 +803,9 @@ def insights() -> dict:
         "by_material": by_material,
         "by_color": by_color,
         "by_style": by_style,
+        "by_pattern": by_pattern,
+        "by_kind": by_kind,
+        "by_brand": by_brand,
         "by_layer": by_layer,
         "by_season": by_season,
         "warmth": warmth,
@@ -759,6 +951,95 @@ def correction_stats() -> dict:
         "total": confirmed + wrong,
         "confusions": confusions,
     }
+
+
+# ----------------------------------------------------------------------------
+# What the system did not see
+#
+# A correction says "you called this a shirt and it is a blouse". This is the
+# other half of being wrong, and until now the system had no way to hear it: the
+# thing it never mentioned at all. A miss cannot be inferred from a correction,
+# because there is nothing to correct -- somebody has to say "there were boots
+# in that photo".
+#
+# It is worth having as its own node type rather than as a Correction with an
+# empty prediction, because the question it answers is different. A confusion
+# table tells you which labels the model swaps. A miss table tells you what it
+# is blind to, which is the more actionable of the two: a category that is
+# missed forty times is a detector problem, not a classifier problem.
+# ----------------------------------------------------------------------------
+def save_missing(missing_id: str, category: str, region: str | None = None,
+                 note: str = "", analysis_id: str | None = None,
+                 garment_id: str | None = None, source: str = "person") -> None:
+    """
+    Record that a piece was in the photograph and the system never mentioned it.
+
+    Linked to the Category it should have seen, so the graph answers "what does
+    this system miss most" directly:
+
+      MATCH (m:Missing)-[:SHOULD_HAVE_SEEN]->(c:Category)
+      RETURN c.name, count(*) AS n ORDER BY n DESC
+    """
+    with driver() as d, d.session() as s:
+        s.run(
+            """
+            MERGE (m:Missing {id: $id})
+            SET m.note = $note, m.region = $region, m.source = $source,
+                m.analysis_id = $analysis_id, m.created_at = datetime()
+            """,
+            id=missing_id, note=note, region=region, source=source,
+            analysis_id=analysis_id,
+        )
+        s.run(
+            """
+            MATCH (m:Missing {id: $id})
+            MERGE (c:Category {name: $category})
+            MERGE (m)-[:SHOULD_HAVE_SEEN]->(c)
+            """,
+            id=missing_id, category=category,
+        )
+        if garment_id:
+            s.run(
+                """
+                MATCH (m:Missing {id: $id})
+                MATCH (g:Garment {id: $garment})
+                MERGE (m)-[:FILED_AS]->(g)
+                """,
+                id=missing_id, garment=garment_id,
+            )
+
+
+def missing_stats() -> dict:
+    """
+    What the system is blind to, counted by the database.
+
+    `by_category` is the ranked list of things people had to add by hand;
+    `by_region` is the same question asked of the body, which is the one that
+    tells you whether the gap is a classifier problem or a detector problem: a
+    pile of misses in one region means nothing is looking there.
+    """
+    with driver() as d, d.session() as s:
+        total = s.run("MATCH (m:Missing) RETURN count(m) AS n").single()["n"]
+        by_category = [dict(r) for r in s.run(
+            """
+            MATCH (m:Missing)-[:SHOULD_HAVE_SEEN]->(c:Category)
+            OPTIONAL MATCH (c)-[:WORN_ON]->(r:Region)
+            RETURN c.name AS name, count(*) AS n,
+                   coalesce(r.name, 'unplaced') AS region
+            ORDER BY n DESC, name
+            """
+        )]
+        by_region = [dict(r) for r in s.run(
+            """
+            MATCH (m:Missing)-[:SHOULD_HAVE_SEEN]->(:Category)-[:WORN_ON]->(r:Region)
+            RETURN r.name AS name, count(*) AS n ORDER BY n DESC, name
+            """
+        )]
+        filed = s.run(
+            "MATCH (:Missing)-[:FILED_AS]->(g:Garment) RETURN count(g) AS n"
+        ).single()["n"]
+    return {"total": total, "filed": filed,
+            "by_category": by_category, "by_region": by_region}
 
 
 def find_by_season(season: str) -> list[dict]:

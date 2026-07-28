@@ -7,6 +7,7 @@ import type {
   GraphStats,
   Health,
   Insights,
+  MissedResult,
   Ontology,
   Preferences,
   Recommendation,
@@ -84,6 +85,29 @@ export async function sendFeedback(body: {
 }): Promise<FeedbackResult> {
   return unwrap<FeedbackResult>(
     await fetch(`${BASE}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  );
+}
+
+/**
+ * Say what was in the photograph that the system never mentioned.
+ *
+ * The counterpart to sendFeedback: that one corrects a label the system offered,
+ * this one names a piece it never offered at all. There is no way to express the
+ * second as the first, which is why it is a separate endpoint rather than a
+ * verdict.
+ */
+export async function reportMissing(body: {
+  analysis_id: string | null;
+  category: string;
+  note: string;
+  file: boolean;
+}): Promise<MissedResult> {
+  return unwrap<MissedResult>(
+    await fetch(`${BASE}/missing`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

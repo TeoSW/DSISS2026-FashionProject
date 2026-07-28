@@ -3,11 +3,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 &nbsp;garment recognition through a knowledge graph
 
+![The Fitting Room app reading a street-style photograph: the upload on the left,
+and on the right a determination label for the black joggers it cut out of the
+picture, with its category, material, colour and pattern each carrying the
+confidence behind it, a printed warmth scale and the seasons that warmth falls
+into.](docs/fitting-room.png)
+
+<sup>One photograph, three garments, each segmented and determined on its own.
+Every number on the label is measured, and the two below 40% are marked `cf.` —
+the botanist's word for *compare with; I am not sure*.</sup>
+
 Upload a photo of clothing and WRDB reports what it is, its material, colour,
-style and sleeve, then derives the weather it suits by **traversing a Neo4j graph
-rather than predicting it**. The reasoning lives in the graph, so it can be
-changed without retraining, and anything the model gets wrong is corrected by
-hand in one tap.
+pattern, style and sleeve, then derives the weather it suits by **traversing a
+Neo4j graph rather than predicting it**. The reasoning lives in the graph, so it
+can be changed without retraining, and anything the model gets wrong is
+corrected by hand in one tap.
 
 It runs as three things over one pipeline: a **CLI**, an **HTTP API**, and a
 **React wardrobe app** where garments are stored as background-removed
@@ -297,11 +307,18 @@ training data rather than about ours.
 
 ### Giving CLIP more words than the ontology has
 
-The ontology has twelve categories because the warmth tables are built on twelve.
-CLIP does not have to be offered only twelve words. Its worst class was
-`t-shirt`, at 22.0% recall against 91.7% precision: it almost never said
-"t-shirt" wrongly, and almost never said it at all. A tank top has nowhere to go
-in a twelve-word vocabulary, so the model picks whatever else is close.
+The ontology had twelve categories at the time of this experiment, because the
+warmth tables were built on twelve. CLIP does not have to be offered only twelve
+words. Its worst class was `t-shirt`, at 22.0% recall against 91.7% precision: it
+almost never said "t-shirt" wrongly, and almost never said it at all. A tank top
+has nowhere to go in a twelve-word vocabulary, so the model picks whatever else
+is close.
+
+The ontology now covers fifty-six categories across nine body regions, and a tank
+top is one of them. The alias mechanism below survives because synonyms and
+regional variants are a different problem from missing categories: "trainers" and
+"sneakers" are two spellings of one thing, and neither of them deserves its own
+node.
 
 `CATEGORY_ALIASES` widens the vocabulary to nineteen words and folds the answer
 back afterwards, adding the probabilities of the aliases onto their ontology
@@ -866,9 +883,12 @@ Left deliberately as extensions, none of them blocking:
 - A **conversational layer**: an LLM turning plain-language questions into Cypher
   through parameterised query templates, never free-form generated queries,
   because the graph has a single admin account. The seams are already in place.
-- **Widening the ontology** beyond the twelve categories to the footwear,
-  accessories and one-piece classes Fashionpedia also labels, and the warmth and
-  region tables to match.
+- **Re-running the evaluation against the widened ontology.** The numbers
+  reported above were measured on twelve categories in three regions; the system
+  now carries fifty-six across nine, and the footwear and accessory half of
+  Fashionpedia is in scope for the first time (twenty-two of its twenty-seven
+  item classes map, against thirteen before). Those figures are not comparable
+  and the new ones have not been measured yet.
 
 ## License
 

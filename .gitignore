@@ -25,6 +25,12 @@ neo4j_data/
 .idea/
 .vscode/
 .claude/settings.local.json
+# agent skills are installed per machine, in ~/.claude/skills, and are nobody
+# else's business: a copy dropped in here is 2.5MB of vendored third-party
+# files that would otherwise ride along in the next commit
+.claude/skills/
+.gemini/
+.21st/
 
 # --- os ---
 Thumbs.db

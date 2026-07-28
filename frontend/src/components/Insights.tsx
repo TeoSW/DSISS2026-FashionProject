@@ -87,6 +87,7 @@ export default function Insights({ data }: { data: Data | null }) {
   const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 
   const confusions = data.corrections?.confusions ?? [];
+  const misses = data.misses;
 
   return (
     <div className="stats">
@@ -116,6 +117,11 @@ export default function Insights({ data }: { data: Data | null }) {
           v={String(t.human_edges)}
           note="attribute edges a person overwrote"
         />
+        <Tile
+          k="never seen"
+          v={String(misses?.total ?? 0)}
+          note="pieces a person had to add by hand"
+        />
         <Tile k="checkpoint" v={data.model.split("/").pop() ?? data.model} note={data.model} />
       </div>
 
@@ -144,6 +150,14 @@ export default function Insights({ data }: { data: Data | null }) {
 
         <Panel title="By style">
           <Bars rows={g.by_style} max={Math.max(1, ...g.by_style.map((r) => r.n))} />
+        </Panel>
+
+        <Panel title="By pattern" note="solid is the default state of cloth">
+          <Bars rows={g.by_pattern} max={Math.max(1, ...g.by_pattern.map((r) => r.n))} />
+        </Panel>
+
+        <Panel title="By kind" note="clothing, footwear, headwear, the rest">
+          <Bars rows={g.by_kind} max={Math.max(1, ...g.by_kind.map((r) => r.n))} />
         </Panel>
 
         <Panel title="Warmth distribution" note="1 cools you down, 11 is for freezing">
@@ -204,6 +218,43 @@ export default function Insights({ data }: { data: Data | null }) {
                 </div>
               ))}
             </div>
+          )}
+        </Panel>
+        {/* The most useful panel here. A confusion table says which labels the
+            model swaps; this says what it never mentioned at all, which is the
+            more actionable of the two — a category missed forty times is a
+            detector problem, not a classifier problem. */}
+        <Panel
+          title="What it did not see"
+          note={
+            misses
+              ? `${misses.total} reported, ${misses.filed} filed by hand`
+              : "nothing reported yet"
+          }
+        >
+          {!misses || misses.total === 0 ? (
+            <p className="reading-empty">
+              Nobody has reported a miss. Either every piece in every photograph
+              was found, or nobody has pressed “something is missing” yet — and
+              the second is much more likely than the first.
+            </p>
+          ) : (
+            <>
+              <Bars
+                rows={misses.by_category}
+                max={Math.max(1, ...misses.by_category.map((r) => r.n))}
+                suffix={(r) => r.region ?? ""}
+              />
+              {misses.by_region.length > 0 && (
+                <p className="prose" style={{ marginTop: 12 }}>
+                  Most often missed on the{" "}
+                  <b>{misses.by_region[0].name}</b> ({misses.by_region[0].n} of{" "}
+                  {misses.total}). Misses scattered across every region are hard
+                  photographs; a pile of them in one region is a system that is
+                  not looking there.
+                </p>
+              )}
+            </>
           )}
         </Panel>
       </div>

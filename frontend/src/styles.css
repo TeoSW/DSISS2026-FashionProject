@@ -1,106 +1,182 @@
 /*
-  Fitting Room
+  ==========================================================================
+  DIRECTION CONTRACT — seed 0ab456ee · assigned index 4 · staging
+  reveal-transform-xray-toggle
+  ==========================================================================
 
-  The design brief was "a good measuring instrument": a photograph and an answer
-  are the two loud things, and every other element recedes to a label. Numbers,
-  labels and identifiers are set in a monospaced face with tabular figures so a
-  column of confidences reads as a column; prose is set in the system UI face.
+  THESIS. A garment you own is a specimen, and what the model says about it is
+  a determination — dated, attributed, and revisable without erasure.
 
-  Colour is one accent (indigo) doing all the emphasis, plus amber reserved for
-  a single job, the low-confidence marker, so that seeing amber always means the
-  same thing. Both themes are defined at token level and the data-theme
-  attribute set by the toggle beats the media query in both directions.
+  OWN-WORLD. The herbarium sheet. Rag paper, iron-gall ink, one stamp blue.
+  Typed determination labels pasted square-cornered and a half-degree off true;
+  an accession stamp; annotation slips that sit beneath the first reading
+  rather than replacing it. Anti-reference: the glossy pastel masonry grid of
+  fashion-app convention, and the near-black dashboard with a neon accent.
+
+  STORY. Mount the specimen → read the determination → lift the sheet to see
+  the arithmetic underneath → file it in the cabinet.
+
+  FIRST VIEWPORT. An empty mounting sheet, ruled and strapped, waiting for a
+  photograph; its determination label blank but already drawn.
+
+  FORM. Square corners, hairline rules, warm paper and conservation board,
+  serif for what is read, typewriter for what was recorded, tabular figures.
+
+  The full system is in DESIGN.md at the repository root.
 */
 
+/* ------------------------------------------------------------------ pigment
+   Both worlds are warm. There is no #000 and no #fff anywhere in this file:
+   paper yellows and iron-gall ink browns, and the dark world is black
+   conservation mount board, which is a thing specimens are actually mounted
+   on, rather than the same page inverted. */
 :root {
-  --paper: #f4f5f7;
-  --surface: #ffffff;
-  --sunken: #eceef2;
-  --ink: #12151c;
-  --ink-2: #5a6272;
-  --ink-3: #878e9d;
-  --line: rgba(18, 21, 28, 0.12);
-  --line-strong: rgba(18, 21, 28, 0.24);
-  --accent: #3b4edb;
-  --accent-soft: rgba(59, 78, 219, 0.1);
-  --accent-ink: #ffffff;
-  --amber: #a06a1c;
-  --amber-soft: rgba(160, 106, 28, 0.12);
-  --bad: #b3261e;
-  --bad-soft: rgba(179, 38, 30, 0.09);
-  --good: #1f6f43;
+  --paper: #efe9dd;
+  --surface: #f7f3e9;
+  --sunken: #e5dccb;
+  --fleck: rgba(94, 76, 44, 0.13);
 
-  --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas,
-    "SF Mono", "Roboto Mono", monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
+  --ink: #201d18;
+  --ink-2: #55503f;
+  /* the quietest ink still has to be readable at 4.5:1 against paper, sheet
+     and well alike — a printed field name you have to guess at is not one */
+  --ink-3: #625a48;
 
-  --radius: 10px;
+  --line: rgba(32, 29, 24, 0.17);
+  --line-strong: rgba(32, 29, 24, 0.36);
+  /* The heavy printed rules -- the header, the footer, a shelf edge, the
+     baseline of the warmth scale. On paper these are ink. On conservation board
+     they are not: a full-strength cream 2px rule across a black page reads as a
+     light leak rather than as a printed line, which is most of what looked
+     wrong in the dark world. */
+  --rule-heavy: #201d18;
+  --label-edge: #201d18;
+
+  --accent: #2c4a78;
+  --accent-soft: rgba(44, 74, 120, 0.1);
+  --accent-ink: #f7f3e9;
+
+  --amber: #8a5a12;
+  --amber-soft: rgba(138, 90, 18, 0.12);
+  --bad: #8c2f24;
+  --bad-soft: rgba(140, 47, 36, 0.1);
+  --good: #3a6138;
+
+  --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas, "SF Mono",
+    "Roboto Mono", monospace;
+  --serif: Constantia, "Palatino Linotype", Palatino, "Iowan Old Style",
+    "Book Antiqua", Georgia, "Times New Roman", serif;
+
+  --radius: 0px;
   --gap: 20px;
-  --shadow: 0 1px 2px rgba(18, 21, 28, 0.06), 0 8px 24px rgba(18, 21, 28, 0.05);
+
+  /* a sheet lying on a table, and a label pasted onto a sheet. Both carry a
+     downward offset; the pasted one is tighter, because the gap it casts
+     across is a millimetre of paste. */
+  --shadow: 0 1px 2px rgba(32, 29, 24, 0.09),
+    0 12px 26px -10px rgba(32, 29, 24, 0.2);
+  --paste: 0 1px 1px rgba(32, 29, 24, 0.16),
+    0 3px 7px -3px rgba(32, 29, 24, 0.2);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #12141a;
-    --surface: #171a22;
-    --sunken: #0e1015;
-    --ink: #edeff3;
-    --ink-2: #9ba3b4;
-    --ink-3: #6f7889;
-    --line: rgba(237, 239, 243, 0.13);
-    --line-strong: rgba(237, 239, 243, 0.26);
-    --accent: #8e9bff;
-    --accent-soft: rgba(142, 155, 255, 0.14);
-    --accent-ink: #12141a;
-    --amber: #eab05a;
-    --amber-soft: rgba(234, 176, 90, 0.14);
-    --bad: #ff9b93;
-    --bad-soft: rgba(255, 155, 147, 0.11);
-    --good: #7fd6a3;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
+    --paper: #14130f;
+    --surface: #1d1b16;
+    --sunken: #100f0c;
+    --fleck: rgba(236, 229, 213, 0.05);
+
+    --ink: #ece5d5;
+    --ink-2: #b1a993;
+    --ink-3: #948c78;
+
+    --line: rgba(236, 229, 213, 0.15);
+    --line-strong: rgba(236, 229, 213, 0.32);
+    --rule-heavy: rgba(236, 229, 213, 0.5);
+    --label-edge: rgba(236, 229, 213, 0.42);
+
+    --accent: #8fadde;
+    --accent-soft: rgba(143, 173, 222, 0.14);
+    --accent-ink: #14130f;
+
+    --amber: #d8a95e;
+    --amber-soft: rgba(216, 169, 94, 0.14);
+    --bad: #e8938a;
+    --bad-soft: rgba(232, 147, 138, 0.12);
+    --good: #86c088;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 30px -12px rgba(0, 0, 0, 0.6);
+    --paste: 0 1px 1px rgba(0, 0, 0, 0.5), 0 3px 8px -3px rgba(0, 0, 0, 0.55);
   }
 }
 
 /* the toggle wins over the OS preference, in both directions */
 :root[data-theme="light"] {
-  --paper: #f4f5f7;
-  --surface: #ffffff;
-  --sunken: #eceef2;
-  --ink: #12151c;
-  --ink-2: #5a6272;
-  --ink-3: #878e9d;
-  --line: rgba(18, 21, 28, 0.12);
-  --line-strong: rgba(18, 21, 28, 0.24);
-  --accent: #3b4edb;
-  --accent-soft: rgba(59, 78, 219, 0.1);
-  --accent-ink: #ffffff;
-  --amber: #a06a1c;
-  --amber-soft: rgba(160, 106, 28, 0.12);
-  --bad: #b3261e;
-  --bad-soft: rgba(179, 38, 30, 0.09);
-  --good: #1f6f43;
-  --shadow: 0 1px 2px rgba(18, 21, 28, 0.06), 0 8px 24px rgba(18, 21, 28, 0.05);
+  --paper: #efe9dd;
+  --surface: #f7f3e9;
+  --sunken: #e5dccb;
+  --fleck: rgba(94, 76, 44, 0.13);
+  --ink: #201d18;
+  --ink-2: #55503f;
+  --ink-3: #625a48;
+  --line: rgba(32, 29, 24, 0.17);
+  --line-strong: rgba(32, 29, 24, 0.36);
+  --rule-heavy: #201d18;
+  --label-edge: #201d18;
+  --accent: #2c4a78;
+  --accent-soft: rgba(44, 74, 120, 0.1);
+  --accent-ink: #f7f3e9;
+  --amber: #8a5a12;
+  --amber-soft: rgba(138, 90, 18, 0.12);
+  --bad: #8c2f24;
+  --bad-soft: rgba(140, 47, 36, 0.1);
+  --good: #3a6138;
+  --shadow: 0 1px 2px rgba(32, 29, 24, 0.09),
+    0 12px 26px -10px rgba(32, 29, 24, 0.2);
+  --paste: 0 1px 1px rgba(32, 29, 24, 0.16),
+    0 3px 7px -3px rgba(32, 29, 24, 0.2);
 }
 
 :root[data-theme="dark"] {
-  --paper: #12141a;
-  --surface: #171a22;
-  --sunken: #0e1015;
-  --ink: #edeff3;
-  --ink-2: #9ba3b4;
-  --ink-3: #6f7889;
-  --line: rgba(237, 239, 243, 0.13);
-  --line-strong: rgba(237, 239, 243, 0.26);
-  --accent: #8e9bff;
-  --accent-soft: rgba(142, 155, 255, 0.14);
-  --accent-ink: #12141a;
-  --amber: #eab05a;
-  --amber-soft: rgba(234, 176, 90, 0.14);
-  --bad: #ff9b93;
-  --bad-soft: rgba(255, 155, 147, 0.11);
-  --good: #7fd6a3;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
+  --paper: #14130f;
+  --surface: #1d1b16;
+  --sunken: #100f0c;
+  --fleck: rgba(236, 229, 213, 0.05);
+  --ink: #ece5d5;
+  --ink-2: #b1a993;
+  --ink-3: #948c78;
+  --line: rgba(236, 229, 213, 0.15);
+  --line-strong: rgba(236, 229, 213, 0.32);
+  --rule-heavy: rgba(236, 229, 213, 0.5);
+  --label-edge: rgba(236, 229, 213, 0.42);
+  --accent: #8fadde;
+  --accent-soft: rgba(143, 173, 222, 0.14);
+  --accent-ink: #14130f;
+  --amber: #d8a95e;
+  --amber-soft: rgba(216, 169, 94, 0.14);
+  --bad: #e8938a;
+  --bad-soft: rgba(232, 147, 138, 0.12);
+  --good: #86c088;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 30px -12px rgba(0, 0, 0, 0.6);
+  --paste: 0 1px 1px rgba(0, 0, 0, 0.5), 0 3px 8px -3px rgba(0, 0, 0, 0.55);
+}
+
+/* Native controls -- the dropdown a <select> opens, the scrollbar, a checkbox --
+   are drawn by the operating system, not by this stylesheet, and they take
+   their light or dark from color-scheme alone. Without this the category
+   dropdown in the correction form opened as cream text on the OS's white
+   popup, which is unreadable and is not something any amount of CSS on the
+   <select> itself can fix. */
+:root {
+  color-scheme: light dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {
@@ -113,14 +189,24 @@ body,
   min-height: 100%;
 }
 
+/* the flecks are the paper. Three coprime tile sizes so no repeat is ever
+   visible at any scroll position, and fixed attachment so the table stays put
+   while the sheets move over it. */
 body {
   margin: 0;
-  background: var(--paper);
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(circle at 21% 33%, var(--fleck) 0 0.6px, transparent 1.3px),
+    radial-gradient(circle at 74% 61%, var(--fleck) 0 0.5px, transparent 1.1px),
+    radial-gradient(circle at 47% 87%, var(--fleck) 0 0.7px, transparent 1.4px);
+  background-size: 43px 47px, 61px 53px, 29px 37px;
+  background-attachment: fixed;
   color: var(--ink);
-  font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.55;
+  font-family: var(--serif);
+  font-size: 15.5px;
+  line-height: 1.58;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 h1,
@@ -139,10 +225,11 @@ textarea {
   color: inherit;
 }
 
+/* a guillotine leaves square corners, and so does the focus ring */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -155,44 +242,146 @@ textarea {
   }
 }
 
-/* ------------------------------------------------------------------ shell */
+.reading-empty,
+.prose,
+.banner {
+  max-width: 68ch;
+}
+
+/* -------------------------------------------------------------------- paste
+   The one authored moment, in two beats, because that is how a sheet is made:
+   the sheet is laid down, and a moment later the determination label is pasted
+   onto it. Nothing else in the interface animates on arrival. */
+@keyframes sheet-lays {
+  from {
+    opacity: 0;
+    transform: translateY(9px);
+    filter: blur(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* the label lands on the rotation it keeps, not on square: `transform: none`
+   here would quietly cancel the pasted angle the moment the animation ends */
+@keyframes label-pasted {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) rotate(-3deg);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-0.4deg);
+  }
+}
+
+.reading-card {
+  animation: sheet-lays 620ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reading-card .det-label {
+  animation: label-pasted 460ms cubic-bezier(0.16, 1, 0.3, 1) 200ms backwards;
+}
+
+/* on a touch screen the controls have to be reachable with a thumb. Padding,
+   not font size: the typography stays where the design put it and only the
+   hit area grows. */
+@media (pointer: coarse), (max-width: 560px) {
+  .garment-actions button.btn.link,
+  .shop-compact summary,
+  .shop-links a,
+  .prefs-disclosure summary {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .controls label.check {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .controls label.check input {
+    width: 20px;
+    height: 20px;
+  }
+
+  /* the card-index tabs and the light switch are the two controls in the
+     header, and they were the two that stayed thumb-sized-minus. The tabs grow
+     upward so their underline stays down on the header's rule. */
+  .viewnav button {
+    display: inline-flex;
+    align-items: flex-end;
+    min-height: 44px;
+  }
+
+  /* these three are declared later in the file, so the override has to out-
+     specify them rather than merely follow them */
+  button.icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  button.btn,
+  button.btn.small {
+    min-height: 44px;
+  }
+
+  /* a dropdown is a control you aim a thumb at too, and the ruled-line field
+     style leaves it the shortest thing on the form */
+  select,
+  input[type="text"],
+  input[type="number"] {
+    min-height: 44px;
+  }
+}
+
+/* ------------------------------------------------------------------- shell */
 .app {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0 24px 80px;
+  padding: 0 26px 80px;
 }
 
 .top {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 15px;
   flex-wrap: wrap;
-  padding: 22px 0 26px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 34px;
+  padding: 26px 0 16px;
+  border-bottom: 2px solid var(--rule-heavy);
+  margin-bottom: 40px;
 }
 
+/* the collection's seal: an inked square, pressed a little crooked */
 .mark {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line-strong);
-  border-radius: 9px;
+  border: 1.5px solid var(--accent);
   color: var(--accent);
   flex: none;
+  opacity: 0.85;
+  transform: rotate(-2.2deg);
 }
 
 .wordmark h1 {
-  font-size: 17px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: 0.005em;
 }
 
 .wordmark p {
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.16em;
+  font-size: 10px;
+  letter-spacing: 0.17em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -204,30 +393,38 @@ textarea {
   gap: 10px;
 }
 
+/* the condition stamp: what the instrument reports about itself */
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 13px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
+  padding: 5px 11px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 10px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
   color: var(--ink-2);
   white-space: nowrap;
 }
 
 .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  width: 6px;
+  height: 6px;
   background: var(--ink-3);
   flex: none;
 }
 
+.pill[data-state="up"] {
+  border-color: var(--good);
+}
 .pill[data-state="up"] .dot {
   background: var(--good);
+}
+.pill[data-state="down"] {
+  border-color: var(--bad);
+  color: var(--bad);
 }
 .pill[data-state="down"] .dot {
   background: var(--bad);
@@ -248,49 +445,81 @@ textarea {
   height: 34px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
   color: var(--ink-2);
   cursor: pointer;
+  transition: color 0.14s, border-color 0.14s;
 }
 
 .icon-btn:hover {
-  color: var(--ink);
-  border-color: var(--line-strong);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
-/* ---------------------------------------------------------------- sections */
+/* ---------------------------------------------------------------- captions
+   A section caption is printed on its rule: the hairline crosses the whole
+   column and the words are punched out of it by the ground colour, the way a
+   plate caption is set on a printed sheet. The plate number sits at the left
+   end of the rule and only the three sections that are a reading sequence
+   carry one. */
 .section {
-  margin-bottom: 34px;
+  margin-bottom: 44px;
 }
 
 .section-head {
+  position: relative;
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 0;
+  margin-bottom: 20px;
+}
+
+.section-head::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 52%;
+  border-top: 1px solid var(--line-strong);
+}
+
+.section-head > * {
+  position: relative;
+  background-color: var(--paper);
+  padding: 0 11px;
+}
+
+.section-head > *:first-child {
+  padding-left: 0;
 }
 
 .section-head .n {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  flex: none;
 }
 
 .section-head h2 {
-  font-size: 19px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: 0.008em;
 }
 
 .section-head .aside {
+  margin-left: auto;
+  padding-right: 0;
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
+  text-align: right;
 }
 
 .columns {
@@ -306,27 +535,63 @@ textarea {
   }
 }
 
+/* a sheet: paper laid on the table, hairlined on all four edges, casting the
+   shadow a sheet of paper actually casts */
 .panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  position: relative;
+  background-color: var(--surface);
+  background-image: radial-gradient(
+    circle at 63% 24%,
+    var(--fleck) 0 0.5px,
+    transparent 1.2px
+  );
+  background-size: 37px 41px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
   box-shadow: var(--shadow);
-  padding: 18px;
+  padding: 20px;
 }
 
-/* --------------------------------------------------------------- drop area */
+/* ------------------------------------------------------------ mounting area
+   The drop zone is an empty mounting sheet: a cut well with linen straps at
+   the two upper corners, which is how you know a thing is mounted rather than
+   merely displayed. */
 .drop {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 330px;
-  padding: 24px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius);
+  min-height: 340px;
+  padding: 34px 24px 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
   background: var(--sunken);
   text-align: center;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
+}
+
+/* the straps */
+.drop::before,
+.drop::after {
+  content: "";
+  position: absolute;
+  top: 26px;
+  width: 34px;
+  height: 0;
+  border-top: 1.5px solid var(--line-strong);
+  pointer-events: none;
+}
+
+.drop::before {
+  left: 16px;
+  transform: rotate(-38deg);
+  transform-origin: left center;
+}
+
+.drop::after {
+  right: 16px;
+  transform: rotate(38deg);
+  transform-origin: right center;
 }
 
 .drop:hover:not([aria-disabled="true"]),
@@ -342,10 +607,10 @@ textarea {
 
 .drop-corner {
   position: absolute;
-  top: 10px;
+  top: 9px;
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 9.5px;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -360,44 +625,46 @@ textarea {
 .drop-inner {
   display: grid;
   justify-items: center;
-  gap: 8px;
+  gap: 7px;
   max-width: 340px;
 }
 
 .drop-icon {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
   border: 1px solid var(--line-strong);
   color: var(--accent);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .drop strong {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 400;
 }
 
 .drop small {
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 13.5px;
 }
 
 .drop-preview {
-  max-height: 320px;
+  max-height: 330px;
   max-width: 100%;
-  border-radius: 6px;
   object-fit: contain;
+  filter: drop-shadow(0 8px 18px rgba(32, 29, 24, 0.18));
 }
 
 .controls {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 15px;
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .check {
@@ -410,8 +677,8 @@ textarea {
 }
 
 .check input {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   accent-color: var(--accent);
 }
 
@@ -424,28 +691,34 @@ textarea {
   margin-left: auto;
 }
 
-/* ---------------------------------------------------------------- buttons */
+/* ------------------------------------------------------------------ stamps
+   Buttons are pressed, not clicked: the label face, tracked and uppercase,
+   inked onto a square. */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 18px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: var(--accent);
+  padding: 11px 20px;
+  border-radius: 0;
+  border: 1px solid var(--ink);
+  background: var(--ink);
   color: var(--accent-ink);
-  font-size: 14px;
-  font-weight: 560;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 400;
   cursor: pointer;
-  transition: filter 0.15s;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
 }
 
 .btn:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 
@@ -453,38 +726,47 @@ textarea {
   background: transparent;
   border-color: var(--line-strong);
   color: var(--ink);
-  font-weight: 500;
 }
 
 .btn.ghost:hover:not(:disabled) {
+  background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
-  filter: none;
 }
 
 .btn.small {
-  padding: 7px 13px;
-  font-size: 13px;
+  padding: 8px 14px;
+  font-size: 10px;
 }
 
+/* a cross-reference printed in the prose, not a stamp */
 .btn.link {
   background: none;
   border: none;
   padding: 0;
   color: var(--accent);
+  font-family: var(--serif);
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
   text-decoration: underline;
   text-underline-offset: 3px;
-  font-weight: 500;
+  text-decoration-thickness: 1px;
 }
 
-/* ---------------------------------------------------------------- banners */
+.btn.link:hover:not(:disabled) {
+  background: none;
+  text-decoration-thickness: 2px;
+}
+
+/* --------------------------------------------------------------- notations */
 .banner {
   margin-top: 16px;
-  padding: 13px 15px;
-  border-radius: 8px;
-  border: 1px solid var(--line);
+  padding: 12px 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
   background: var(--surface);
-  font-size: 14px;
+  font-size: 14.5px;
   color: var(--ink-2);
 }
 
@@ -503,58 +785,65 @@ textarea {
 .banner code,
 code {
   font-family: var(--mono);
-  font-size: 0.92em;
+  font-size: 0.9em;
   background: var(--sunken);
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 1px 5px;
+  border-radius: 0;
 }
 
-/* ---------------------------------------------------------------- reading */
+/* ------------------------------------------------------------ determination */
 .reading-empty {
   color: var(--ink-2);
-  font-size: 14px;
+  font-size: 14.5px;
 }
 
 .steps {
   list-style: none;
   padding: 0;
-  margin: 16px 0 0;
+  margin: 18px 0 0;
   display: grid;
-  gap: 7px;
+  gap: 0;
   font-family: var(--mono);
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
+  font-size: 11px;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .steps li {
   display: flex;
-  gap: 12px;
+  gap: 13px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.steps li:first-child {
+  border-top: 1px solid var(--line);
 }
 
 .steps b {
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
 .headline {
-  font-size: 26px;
-  line-height: 1.2;
-  font-weight: 620;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  font-size: 28px;
+  line-height: 1.18;
+  font-weight: 400;
+  letter-spacing: -0.012em;
   text-wrap: balance;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 
 .subhead {
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.13em;
+  font-size: 10px;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--ink-3);
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .pair {
@@ -575,154 +864,200 @@ code {
   object-fit: contain;
   background: var(--sunken);
   border: 1px solid var(--line);
-  border-radius: 8px;
 }
 
 .pair figcaption {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.13em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
+/* the typed field block of a determination label: a printed field name, the
+   value, a measured confidence, and the botanist's cf. when the machine is
+   not sure of it */
 .rows {
   display: grid;
-  gap: 11px;
-  border-top: 1px solid var(--line);
-  padding-top: 15px;
+  gap: 0;
+  border-top: 1px solid var(--line-strong);
+  margin-top: 12px;
 }
 
 .row {
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr) 116px 46px;
+  grid-template-columns: 74px minmax(0, 1fr) 92px 48px;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .row .group {
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .row .label {
-  font-size: 15px;
-  font-weight: 540;
+  font-family: var(--serif);
+  font-size: 15.5px;
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.row .cf {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  margin-right: 5px;
+}
+
 .row .num {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
   text-align: right;
 }
 
 .track {
-  height: 7px;
+  height: 5px;
   background: var(--sunken);
-  border-radius: 0 4px 4px 0;
+  border-radius: 0;
   overflow: hidden;
 }
 
 .fill {
   height: 100%;
   background: var(--accent);
-  border-radius: 0 4px 4px 0;
+  border-radius: 0;
 }
 
 .fill[data-low="true"] {
   background: var(--amber);
 }
 
-.low {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--amber);
-  border: 1px solid var(--amber);
-  border-radius: 4px;
-  padding: 1px 5px;
-  justify-self: start;
-}
-
 @media (max-width: 560px) {
   .row {
-    grid-template-columns: 72px minmax(0, 1fr) 52px;
+    grid-template-columns: 68px minmax(0, 1fr) 52px;
   }
   .row .track {
     display: none;
   }
 }
 
+/* ------------------------------------------------------------ printed scale
+   Warmth is a reading off an instrument, so it is drawn as one: eleven ticks
+   on a baseline, the first, sixth and eleventh numbered by a CSS counter, the
+   derived value inked in from the left. */
 .meter {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  align-items: flex-end;
+  gap: 16px;
   margin-top: 18px;
-  padding-top: 15px;
-  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  border-top: 1px solid var(--line-strong);
 }
 
 .meter .value {
-  font-family: var(--mono);
-  font-size: 25px;
+  font-family: var(--serif);
+  font-size: 32px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  flex: none;
 }
 
 .meter .value span {
-  font-size: 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
   color: var(--ink-3);
 }
 
 .ticks {
+  position: relative;
   display: flex;
-  gap: 3px;
   flex: 1;
+  align-items: flex-end;
+  height: 26px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--rule-heavy);
+  counter-reset: warmth;
 }
 
 .tick {
-  height: 20px;
+  position: relative;
   flex: 1;
-  border-radius: 2px;
-  background: var(--sunken);
+  height: 6px;
+  border-left: 1px solid var(--line-strong);
+  counter-increment: warmth;
+}
+
+.tick:last-child {
+  border-right: 1px solid var(--line-strong);
 }
 
 .tick[data-on="true"] {
+  height: 22px;
   background: var(--accent);
+  border-left-color: var(--surface);
 }
 
+.tick:nth-child(1)::after,
+.tick:nth-child(6)::after,
+.tick:nth-child(11)::after {
+  content: counter(warmth);
+  position: absolute;
+  top: 100%;
+  left: -1px;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+}
+
+.tick:nth-child(11)::after {
+  left: auto;
+  right: -1px;
+}
+
+/* the pasted tabs: season windows, filters, preferences. Square, because a
+   paper tab is cut with a blade. */
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 7px;
+  margin-top: 16px;
 }
 
 .chip {
   display: inline-flex;
   align-items: baseline;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 5px 11px;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--surface);
-  font-size: 13.5px;
+  font-family: var(--serif);
+  font-size: 14px;
   color: var(--ink);
   cursor: default;
+  transition: border-color 0.14s, background 0.14s, color 0.14s;
 }
 
 .chip small {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
@@ -731,13 +1066,24 @@ button.chip {
   cursor: pointer;
 }
 
+button.chip:hover {
+  border-color: var(--accent);
+}
+
 button.chip[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-/* ------------------------------------------------------------------- flag */
+button.chip[aria-pressed="true"] small {
+  color: var(--accent);
+}
+
+/* ----------------------------------------------------------- revision slips
+   A determination is never erased. The question sits under the label; the
+   answer is pasted beneath it as a slip, a half-degree off true, carrying what
+   the machine said struck through and what you said in stamp blue. */
 .flag {
   margin-top: 18px;
   padding-top: 16px;
@@ -749,7 +1095,7 @@ button.chip[aria-pressed="true"] {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 14px;
+  font-size: 14.5px;
   color: var(--ink-2);
 }
 
@@ -759,17 +1105,17 @@ button.chip[aria-pressed="true"] {
 
 .fix {
   display: grid;
-  gap: 12px;
-  margin-top: 14px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  gap: 13px;
+  margin-top: 15px;
+  padding: 16px;
+  border: 1px solid var(--line-strong);
   background: var(--sunken);
 }
 
 .fix p.hint {
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--ink-2);
+  max-width: 62ch;
 }
 
 .fix-row {
@@ -781,113 +1127,190 @@ button.chip[aria-pressed="true"] {
 
 .fix-row .group {
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
+/* a field is a ruled line on a form, not a box */
 select,
-textarea,
-input[type="text"] {
+input[type="text"],
+input[type="number"] {
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  background: var(--surface);
-  font-size: 14px;
+  padding: 7px 2px;
+  border: none;
+  border-bottom: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  transition: border-color 0.14s;
+}
+
+select:focus-visible,
+input[type="text"]:focus-visible,
+input[type="number"]:focus-visible {
+  outline: none;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 6px;
+}
+
+/* The dropdown a <select> opens is painted by the browser, and it takes the
+   option rows' own colours before it takes anything else. Ours inherited cream
+   text from the field and left the row background at the platform default,
+   which is white -- cream on white, which is no colour at all.
+   color-scheme is set on :root as well, and is what fixes the popup on macOS
+   and the scrollbar everywhere, but it cannot override an author-set colour on
+   a transparent field. These two declarations can, on every platform. */
+select option,
+select optgroup {
+  background-color: var(--surface);
+  color: var(--ink);
 }
 
 select[data-changed="true"] {
-  border-color: var(--accent);
+  border-bottom-color: var(--accent);
   color: var(--accent);
 }
 
+/* the comment area of a printed form: ruled paper inside a hairline box */
 textarea {
+  width: 100%;
   resize: vertical;
-  min-height: 62px;
-  font-family: inherit;
+  min-height: 66px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ink);
+  background-color: var(--surface);
+  background-image: repeating-linear-gradient(
+    transparent 0 21px,
+    var(--line) 21px 22px
+  );
 }
 
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* the slip carries the determination label's own double frame, at a smaller
+   offset, rather than a thick coloured edge on one side: a pasted strip is
+   ruled all the way round or not at all */
 .receipt {
   display: grid;
   gap: 4px;
-  margin-top: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  outline: 1px solid var(--line);
+  outline-offset: 2px;
+  background: var(--surface);
+  box-shadow: var(--paste);
+  transform: rotate(-0.5deg);
   font-family: var(--mono);
   font-size: 11.5px;
+  line-height: 1.55;
   color: var(--ink-2);
 }
 
 .receipt b {
   color: var(--good);
-  font-weight: 500;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-/* ------------------------------------------------------------- derivation */
+/* ---------------------------------------------------------------- the x-ray
+   Lift the sheet and this is what is underneath: the arithmetic that produced
+   the warmth, and the ranges it was matched against. It sits on the well
+   rather than on a sheet, because you are looking at the table through the
+   paper. */
+/* recessed, not raised: this panel is the only one in the app that does not
+   cast a shadow but receives one, because you are looking under the sheet
+   rather than at it */
 .derivation {
   display: grid;
-  gap: 14px;
+  gap: 18px;
+  background-color: var(--sunken);
+  background-image: none;
+  box-shadow: inset 0 2px 8px -4px rgba(32, 29, 24, 0.35);
 }
 
 .sum {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 10px;
   flex-wrap: wrap;
   font-family: var(--mono);
-  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 
 .term {
   display: grid;
-  gap: 2px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  gap: 3px;
+  padding: 9px 13px;
+  border: 1px solid var(--line-strong);
   background: var(--surface);
-  min-width: 92px;
+  min-width: 96px;
 }
 
 .term .k {
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .term .v {
-  font-size: 15px;
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.1;
 }
 
 .op {
+  align-self: center;
   color: var(--ink-3);
-  font-size: 16px;
+  font-family: var(--serif);
+  font-size: 19px;
 }
 
 .term.total {
-  border-color: var(--accent);
+  border: 1.5px solid var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
 }
 
+.term.total .k {
+  color: var(--accent);
+}
+
+/* the ecological range chart */
 .windows {
   display: grid;
-  gap: 5px;
+  gap: 0;
+  border-top: 1px solid var(--line-strong);
 }
 
 .window {
   display: grid;
-  grid-template-columns: 84px 1fr 96px;
+  grid-template-columns: 88px 1fr 100px;
   align-items: center;
-  gap: 10px;
-  font-size: 13px;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
 }
 
 .window .name {
   font-family: var(--mono);
-  font-size: 11.5px;
-  letter-spacing: 0.1em;
+  font-size: 10px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -898,7 +1321,7 @@ textarea {
 
 .window .range {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-3);
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -906,9 +1329,10 @@ textarea {
 
 .scale {
   position: relative;
-  height: 16px;
+  height: 13px;
   background: var(--sunken);
-  border-radius: 3px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .span {
@@ -916,7 +1340,6 @@ textarea {
   top: 0;
   bottom: 0;
   background: var(--line-strong);
-  border-radius: 3px;
 }
 
 .window[data-hit="true"] .span {
@@ -925,32 +1348,30 @@ textarea {
 
 .needle {
   position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 2px;
+  top: -4px;
+  bottom: -4px;
+  width: 1.5px;
   background: var(--ink);
 }
 
 .prose {
-  font-size: 14px;
+  font-size: 14.5px;
   color: var(--ink-2);
   max-width: 68ch;
 }
 
-/* --------------------------------------------------------------- wardrobe
-   A cabinet, not a table: an inner sunken panel, a rail per body region with
-   its own bar, and cards that hang from it by a drawn hook. The furniture is
-   made of the same tokens as everything else, so it reads as built into the
-   instrument rather than pasted on. */
+/* --------------------------------------------------------------- the cabinet
+   Where filed specimens live. The interior is the well; each region is a shelf
+   with its edge drawn under it, and every card hangs from that shelf by a pair
+   of mounting straps. */
 .cabinet {
   display: grid;
-  gap: 22px;
+  gap: 24px;
   grid-template-columns: 1fr;
-  padding: 20px;
+  padding: 22px;
   border: 1px solid var(--line-strong);
-  border-radius: 14px;
   background: var(--sunken);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), var(--shadow);
+  box-shadow: inset 0 2px 6px -3px rgba(32, 29, 24, 0.25);
 }
 
 @media (min-width: 860px) {
@@ -966,10 +1387,10 @@ textarea {
   display: grid;
   gap: 14px;
   justify-items: center;
-  padding: 14px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
+  padding: 16px 14px;
+  border: 1px solid var(--line-strong);
   background: var(--surface);
+  box-shadow: var(--shadow);
 }
 
 .mannequin {
@@ -982,27 +1403,27 @@ textarea {
 .mannequin .neck {
   fill: none;
   stroke: var(--line-strong);
-  stroke-width: 1.6;
+  stroke-width: 1.4;
 }
 
 .mannequin .stand path,
 .mannequin .dress-form path {
   fill: none;
   stroke: var(--line-strong);
-  stroke-width: 1.6;
+  stroke-width: 1.4;
   stroke-linecap: round;
 }
 
 .mannequin .stand ellipse {
   fill: none;
   stroke: var(--line-strong);
-  stroke-width: 1.2;
+  stroke-width: 1.1;
 }
 
 .mannequin .zone {
   fill: var(--surface);
   stroke: var(--line-strong);
-  stroke-width: 1.6;
+  stroke-width: 1.4;
   cursor: pointer;
   transition: fill 0.15s, stroke 0.15s;
 }
@@ -1021,12 +1442,12 @@ textarea {
 
 .mannequin .zone[data-empty="true"] {
   fill: transparent;
-  stroke-dasharray: 4 4;
+  stroke-dasharray: 3 4;
 }
 
 .mannequin .zone-n {
-  font-family: var(--mono);
-  font-size: 15px;
+  font-family: var(--serif);
+  font-size: 16px;
   font-variant-numeric: tabular-nums;
   fill: var(--ink-2);
   pointer-events: none;
@@ -1035,13 +1456,13 @@ textarea {
 .figure-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 6px;
   justify-content: center;
 }
 
 .rails {
   display: grid;
-  gap: 26px;
+  gap: 30px;
   min-width: 0;
 }
 
@@ -1052,15 +1473,16 @@ textarea {
 }
 
 .rail-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 400;
 }
 
 .rail-note,
 .rail-n {
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -1070,77 +1492,87 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* the shelf edge */
 .rail-bar {
-  height: 3px;
-  margin: 8px 0 0;
-  border-radius: 2px;
-  background: linear-gradient(
-    to right,
-    var(--line-strong),
-    var(--line-strong) calc(100% - 6px),
-    transparent
-  );
+  height: 0;
+  margin: 7px 0 0;
+  border-top: 2px solid var(--rule-heavy);
+  box-shadow: 0 2px 4px -2px rgba(32, 29, 24, 0.4);
 }
 
 .hangers {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
-  gap: 14px;
-  padding-top: 0;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
 }
 
 .garment {
   position: relative;
   display: grid;
   gap: 0;
-  margin-top: 14px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  margin-top: 16px;
+  border: 1px solid var(--line-strong);
   background: var(--surface);
-  overflow: hidden;
+  box-shadow: var(--shadow);
 }
 
-/* the hook: how the card is attached to the rail above it */
-.garment .hook {
+/* the mounting straps: how this sheet is attached to the shelf above it */
+.garment .strap {
   position: absolute;
-  top: -14px;
-  left: 50%;
-  width: 11px;
-  height: 14px;
-  margin-left: -5px;
-  border: 1.6px solid var(--line-strong);
-  border-bottom: none;
-  border-radius: 6px 6px 0 0;
+  top: -16px;
+  left: 0;
+  right: 0;
+  height: 16px;
+  pointer-events: none;
+}
+
+.garment .strap::before,
+.garment .strap::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  width: 22px;
+  border-top: 1.4px solid var(--line-strong);
+}
+
+.garment .strap::before {
+  left: 12px;
+  transform: rotate(-40deg);
+  transform-origin: left center;
+}
+
+.garment .strap::after {
+  right: 12px;
+  transform: rotate(40deg);
+  transform-origin: right center;
 }
 
 .garment .frame {
   position: relative;
   display: grid;
   place-items: center;
-  height: 210px;
-  padding: 12px;
+  height: 212px;
+  padding: 14px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--surface) 55%, transparent), transparent 70%),
-    var(--sunken);
-  border-bottom: 1px solid var(--line);
+  background: var(--sunken);
+  border-bottom: 1px solid var(--line-strong);
 }
 
 /* an explicit pixel cap, not max-height:100%: a percentage max-height does not
    resolve on a grid item, so a tall cutout would keep its natural height and
    spill over the whole card below it. */
 .garment .frame img {
-  max-height: 186px;
+  max-height: 184px;
   max-width: 100%;
   width: auto;
   object-fit: contain;
-  filter: drop-shadow(0 6px 14px rgba(18, 21, 28, 0.14));
+  filter: drop-shadow(0 6px 14px rgba(32, 29, 24, 0.2));
 }
 
 .no-photo {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink-3);
   text-align: center;
@@ -1150,30 +1582,31 @@ textarea {
 .garment-body {
   display: grid;
   gap: 6px;
-  padding: 11px 12px 10px;
+  padding: 12px 13px 11px;
 }
 
 .garment-name {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 15px;
-  font-weight: 600;
+  font-family: var(--serif);
+  font-size: 17.5px;
+  font-weight: 400;
+  letter-spacing: -0.005em;
 }
 
 .badge {
   font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: 4px;
   padding: 1px 5px;
 }
 
 .garment-sub {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-2);
 }
 
@@ -1187,18 +1620,17 @@ textarea {
 
 .garment-meta .warm {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
   padding: 1px 5px;
 }
 
 .garment-meta .season {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -1207,22 +1639,29 @@ textarea {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 10px;
-  margin-top: 4px;
-  padding-top: 8px;
+  gap: 8px 10px;
+  margin-top: 5px;
+  padding-top: 9px;
   border-top: 1px solid var(--line);
 }
 
+/* the accession number, stamped: how a collection refers to a specimen */
 .garment-foot .id {
   font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--ink-3);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  padding: 2px 6px;
+  opacity: 0.82;
+  transform: rotate(-1.4deg);
 }
 
 /* buttons keep their natural width and never break a label across lines; if
-   the row runs out of room the whole action group wraps under the id instead */
+   the row runs out of room the whole action group wraps under the stamp */
 .garment-foot .btn.link {
-  font-size: 12px;
+  font-size: 13px;
   white-space: nowrap;
   flex: none;
 }
@@ -1243,12 +1682,11 @@ textarea {
 
 .garment-name .brand-chip {
   font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
+  font-size: 9px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-2);
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
   padding: 1px 5px;
 }
 
@@ -1256,52 +1694,55 @@ textarea {
   color: var(--bad);
 }
 
-/* -------------------------------------------------------------- statistics */
+/* -------------------------------------------------------------- the ledger */
 .stats {
   display: grid;
-  gap: 20px;
+  gap: 22px;
 }
 
+/* a ruled ledger, not a row of floating cards: the grid gap is the hairline,
+   drawn by the container's own colour showing through, so no cell ever ends up
+   with a stray trailing rule at the edge of a wrapped row */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(172px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line-strong);
+  background: var(--line-strong);
+  box-shadow: var(--shadow);
 }
 
 .tile {
   display: grid;
   gap: 3px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  padding: 15px 17px;
   background: var(--surface);
-  box-shadow: var(--shadow);
 }
 
 .tile-k {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 9.5px;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .tile-v {
-  font-family: var(--mono);
-  font-size: 26px;
+  font-family: var(--serif);
+  font-size: 27px;
   line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.015em;
   font-variant-numeric: tabular-nums;
 }
 
 .tile-note {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink-2);
 }
 
 .stat-grid {
   display: grid;
-  gap: 16px;
+  gap: 18px;
   grid-template-columns: 1fr;
 }
 
@@ -1319,17 +1760,30 @@ textarea {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 15px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .stat-head h3 {
-  font-size: 14.5px;
-  font-weight: 620;
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.stat-head .aside {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-align: right;
 }
 
 .bars {
   display: grid;
-  gap: 8px;
+  gap: 0;
 }
 
 .bar-row {
@@ -1337,41 +1791,41 @@ textarea {
   grid-template-columns: 92px minmax(0, 1fr) 34px 108px;
   align-items: center;
   gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .bar-label {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: 13.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .bar-track {
-  height: 7px;
+  height: 5px;
   background: var(--sunken);
-  border-radius: 0 4px 4px 0;
 }
 
 .bar-fill {
   display: block;
   height: 100%;
   background: var(--accent);
-  border-radius: 0 4px 4px 0;
 }
 
 .bar-n {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
 .bar-extra {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 9.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-3);
@@ -1393,28 +1847,29 @@ textarea {
 .swatch {
   width: 11px;
   height: 11px;
-  border-radius: 3px;
   border: 1px solid var(--line-strong);
   flex: none;
 }
 
-.swatch[data-color="black"] { background: #101014; }
-.swatch[data-color="white"] { background: #f7f7f8; }
-.swatch[data-color="grey"] { background: #8b8f98; }
-.swatch[data-color="blue"] { background: #3f63c8; }
-.swatch[data-color="red"] { background: #b8382f; }
-.swatch[data-color="green"] { background: #3d7a4d; }
-.swatch[data-color="yellow"] { background: #d8b23a; }
-.swatch[data-color="brown"] { background: #7a5334; }
-.swatch[data-color="beige"] { background: #d9c7a7; }
-.swatch[data-color="pink"] { background: #d98aa6; }
+.swatch[data-color="black"] { background: #17150f; }
+.swatch[data-color="white"] { background: #f4efe2; }
+.swatch[data-color="grey"] { background: #8b877c; }
+.swatch[data-color="blue"] { background: #38598f; }
+.swatch[data-color="red"] { background: #9c3b2c; }
+.swatch[data-color="green"] { background: #4a6b41; }
+.swatch[data-color="yellow"] { background: #c9a53c; }
+.swatch[data-color="brown"] { background: #715030; }
+.swatch[data-color="beige"] { background: #d5c4a1; }
+.swatch[data-color="pink"] { background: #c98b9a; }
 
 .histogram {
   display: grid;
   grid-template-columns: repeat(11, 1fr);
-  gap: 4px;
+  gap: 3px;
   align-items: end;
-  height: 150px;
+  height: 152px;
+  border-bottom: 1px solid var(--rule-heavy);
+  padding-bottom: 0;
 }
 
 .histogram .col {
@@ -1428,7 +1883,7 @@ textarea {
 
 .col-n {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
 }
@@ -1437,8 +1892,6 @@ textarea {
   width: 100%;
   min-height: 2px;
   background: var(--accent);
-  border-radius: 4px 4px 0 0;
-  align-self: end;
 }
 
 .col-fill[data-empty="true"] {
@@ -1447,14 +1900,17 @@ textarea {
 
 .col-k {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-3);
+  align-self: start;
+  margin-top: 4px;
 }
 
+/* what one determination said and what the next one said: both legible */
 .confusions {
   display: grid;
-  gap: 7px;
+  gap: 0;
 }
 
 .confusion {
@@ -1462,7 +1918,17 @@ textarea {
   grid-template-columns: 74px minmax(0, 1fr) 18px minmax(0, 1fr) 30px;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
+}
+
+.confusion .group {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
 }
 
 .confusion .was {
@@ -1473,7 +1939,6 @@ textarea {
 
 .confusion .is {
   color: var(--accent);
-  font-weight: 560;
 }
 
 .confusion .arrow {
@@ -1481,31 +1946,31 @@ textarea {
   text-align: center;
 }
 
-/* ----------------------------------------------------------------- footer */
+/* ------------------------------------------------------------ sheet footer */
 .foot {
-  margin-top: 46px;
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
+  margin-top: 50px;
+  padding-top: 16px;
+  border-top: 2px solid var(--rule-heavy);
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 26px;
+  gap: 10px 28px;
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .foot b {
   color: var(--ink-2);
-  font-weight: 500;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
 .spin {
-  width: 14px;
-  height: 14px;
-  border: 2px solid currentColor;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
@@ -1529,34 +1994,40 @@ textarea {
   border: 0;
 }
 
-/* ============================================================== view nav */
+/* -------------------------------------------------------------- card index */
 .viewnav {
   display: flex;
-  gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--sunken);
+  gap: 22px;
+  align-self: flex-end;
+  /* the tabs sit down on the header's own rule: 16px of padding plus the 2px
+     border, so an active tab's underline lands exactly on it */
+  margin-bottom: -18px;
 }
 
 .viewnav button {
   border: none;
   background: none;
-  padding: 5px 13px;
-  border-radius: 7px;
-  font-size: 13px;
-  font-weight: 540;
-  color: var(--ink-2);
+  padding: 5px 1px 9px;
+  border-bottom: 2px solid transparent;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-3);
   cursor: pointer;
+  transition: color 0.14s, border-color 0.14s;
+}
+
+.viewnav button:hover {
+  color: var(--ink);
 }
 
 .viewnav button[aria-pressed="true"] {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
-/* ================================================================== shop */
+/* --------------------------------------------------------- where to buy one */
 .shop {
   margin-top: 18px;
   padding-top: 16px;
@@ -1564,72 +2035,76 @@ textarea {
 }
 
 .shop-head {
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--ink-2);
   margin-bottom: 12px;
 }
 
 .shop-head b {
   color: var(--ink);
+  font-weight: 600;
 }
 
 .shop-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
   gap: 8px;
 }
 
 .shop-card {
   display: grid;
-  gap: 2px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid var(--line-strong);
   background: var(--surface);
   text-decoration: none;
   color: inherit;
-  transition: border-color 0.15s, transform 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .shop-card:hover {
   border-color: var(--accent);
-  transform: translateY(-1px);
+  background: var(--accent-soft);
 }
 
 .shop-name {
-  font-size: 13.5px;
+  font-family: var(--serif);
+  font-size: 14.5px;
   font-weight: 600;
 }
 
 .shop-note {
-  font-size: 11.5px;
-  color: var(--ink-3);
-  line-height: 1.35;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.4;
 }
 
 .shop-go {
   margin-top: 4px;
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
   color: var(--accent);
 }
 
 .shop-fine {
   margin-top: 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ink-3);
 }
 
 .shop-compact {
-  margin-top: 8px;
-  font-size: 12.5px;
+  margin-top: 9px;
+  font-size: 13px;
 }
 
 .shop-compact summary {
   cursor: pointer;
   color: var(--accent);
   list-style: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .shop-compact summary::-webkit-details-marker {
@@ -1639,12 +2114,12 @@ textarea {
 .shop-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
+  gap: 6px 13px;
   margin-top: 8px;
 }
 
 .shop-links a {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-2);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -1654,164 +2129,165 @@ textarea {
   color: var(--accent);
 }
 
-/* ============================================================ recommender */
+/* -------------------------------------------------------- the day's outfit */
 .season-picker {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: 7px;
+  margin-bottom: 18px;
 }
 
 .outfit-panel {
   padding: 0;
-  overflow: hidden;
 }
 
 .outfit-head {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--line);
+  padding: 17px 19px;
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .outfit-for {
-  font-size: 16px;
-  font-weight: 560;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 400;
 }
 
 .outfit-for b {
   color: var(--accent);
+  font-weight: 400;
 }
 
 .outfit-sub {
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-3);
-  margin-top: 3px;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .outfit-status {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  padding: 3px 9px;
-  border-radius: 999px;
+  padding: 3px 8px;
   white-space: nowrap;
+  transform: rotate(1.4deg);
+  opacity: 0.85;
 }
 
 .outfit-status.ok {
   color: var(--good);
-  border: 1px solid var(--good);
+  border: 1.5px solid var(--good);
 }
 
 .outfit-status.warn {
   color: var(--amber);
-  border: 1px solid var(--amber);
+  border: 1.5px solid var(--amber);
 }
 
 .outfit {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
-  padding: 18px;
+  gap: 16px;
+  padding: 19px;
 }
 
 .outfit-piece {
   display: grid;
-  gap: 6px;
-  width: 130px;
+  gap: 7px;
+  width: 132px;
 }
 
 .outfit-piece img {
-  width: 130px;
-  height: 150px;
+  width: 132px;
+  height: 152px;
   object-fit: contain;
   background: var(--sunken);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
 }
 
 .outfit-piece .no-photo {
   display: grid;
   place-items: center;
-  width: 130px;
-  height: 150px;
+  width: 132px;
+  height: 152px;
   background: var(--sunken);
   border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  font-size: 11px;
-  color: var(--ink-3);
+  font-size: 10px;
 }
 
 .outfit-piece figcaption {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
 .op-name {
-  font-size: 13.5px;
-  font-weight: 560;
+  font-family: var(--serif);
+  font-size: 14.5px;
 }
 
 .op-sub {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 
 .op-price {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
 
 .outfit-reasons {
-  padding: 0 18px 14px;
-  font-size: 13.5px;
+  padding: 0 19px 15px;
+  font-size: 14px;
   color: var(--ink-2);
 }
 
 .outfit-missing {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  margin: 0 18px 18px;
-  padding: 12px 14px;
+  gap: 11px;
+  margin: 0 19px 19px;
+  padding: 13px 15px;
   background: var(--amber-soft);
   border: 1px solid var(--amber);
-  border-radius: 8px;
 }
 
 .missing-tag,
 .gap-badge.warn {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--amber);
 }
 
 .outfit-missing ul {
   margin: 0;
-  padding-left: 16px;
-  font-size: 13.5px;
+  padding-left: 17px;
+  font-size: 14px;
   color: var(--ink);
 }
 
-/* ============================================================ preferences */
+/* -------------------------------------------------------------- your taste */
 .prefs-disclosure {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .prefs-disclosure > summary {
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--accent);
   list-style: none;
   padding: 6px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .prefs-disclosure > summary::-webkit-details-marker {
@@ -1820,8 +2296,8 @@ textarea {
 
 .prefs {
   display: grid;
-  gap: 16px;
-  margin-top: 8px;
+  gap: 18px;
+  margin-top: 10px;
 }
 
 .prefs-row {
@@ -1831,8 +2307,8 @@ textarea {
 
 .prefs-k {
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -1840,7 +2316,7 @@ textarea {
 .prefs-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 6px;
 }
 
 .swatch-chip {
@@ -1854,7 +2330,7 @@ textarea {
 }
 
 .prefs-foot {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--ink-3);
 }
 
@@ -1866,36 +2342,33 @@ textarea {
   color: var(--bad);
 }
 
-/* =============================================== wardrobe card extensions */
-.frame {
-  position: relative;
-}
-
+/* ------------------------------------------------------------ what it cost */
 .price-tag {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 9px;
+  right: 9px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 3px 7px;
   background: var(--ink);
-  color: var(--paper);
+  color: var(--surface);
 }
 
 .price-tag[data-estimated="true"] {
-  background: color-mix(in srgb, var(--ink) 82%, transparent);
+  background: transparent;
+  color: var(--ink);
+  border: 1px dashed var(--line-strong);
 }
 
 .price-tag .tag-est {
-  font-size: 8.5px;
-  letter-spacing: 0.08em;
+  font-size: 8px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  opacity: 0.7;
+  opacity: 0.75;
 }
 
 .wash-tag {
@@ -1903,7 +2376,7 @@ textarea {
   align-items: center;
   gap: 6px;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 
@@ -1915,8 +2388,8 @@ textarea {
 .wash-src {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.06em;
+  font-size: 9px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -1924,11 +2397,10 @@ textarea {
 .garment-edit {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 10px;
-  margin-top: 10px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  gap: 10px 12px;
+  margin-top: 11px;
+  padding: 13px;
+  border: 1px solid var(--line-strong);
   background: var(--sunken);
 }
 
@@ -1937,8 +2409,8 @@ textarea {
   gap: 3px;
   min-width: 0;
   font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
+  font-size: 9px;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -1950,16 +2422,17 @@ textarea {
 .garment-edit input {
   width: 100%;
   min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--surface);
-  font-size: 13px;
+  padding: 5px 2px;
+  border: none;
+  border-bottom: 1px solid var(--line-strong);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 12.5px;
 }
 
 .edit-err {
   grid-column: 1 / -1;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--bad);
 }
 
@@ -1967,27 +2440,27 @@ textarea {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 13px;
 }
 
-/* ================================================================ profile */
+/* ---------------------------------------------------------- the collection */
 .profile {
   display: grid;
-  gap: 20px;
+  gap: 22px;
 }
 
 .profile-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line-strong);
+  background: var(--line-strong);
+  box-shadow: var(--shadow);
 }
 
 .ps-tile {
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  padding: 15px 17px;
   background: var(--surface);
-  box-shadow: var(--shadow);
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -1999,31 +2472,33 @@ textarea {
 
 .ps-k {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .ps-v {
-  font-size: 22px;
-  font-weight: 620;
+  font-family: var(--serif);
+  font-size: 23px;
+  font-weight: 400;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .ps-v.small {
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .ps-note {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 
 .ps-item {
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 11px;
   align-items: center;
 }
 
@@ -2033,16 +2508,12 @@ textarea {
   gap: 2px;
 }
 
-.ps-v {
-  overflow-wrap: anywhere;
-}
-
 .ps-item img {
   width: 48px;
-  height: 56px;
+  height: 58px;
   object-fit: contain;
   background: var(--sunken);
-  border-radius: 6px;
+  border: 1px solid var(--line);
 }
 
 .profile-grid {
@@ -2053,7 +2524,7 @@ textarea {
 
 .palette {
   display: grid;
-  gap: 8px;
+  gap: 0;
 }
 
 .palette-row {
@@ -2061,7 +2532,9 @@ textarea {
   grid-template-columns: 96px 1fr 26px;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13.5px;
 }
 
 .palette-label {
@@ -2072,9 +2545,8 @@ textarea {
 }
 
 .palette-track {
-  height: 7px;
+  height: 5px;
   background: var(--sunken);
-  border-radius: 4px;
   overflow: hidden;
 }
 
@@ -2082,12 +2554,11 @@ textarea {
   display: block;
   height: 100%;
   background: var(--accent);
-  border-radius: 4px;
 }
 
 .palette-n {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
   text-align: right;
@@ -2095,7 +2566,7 @@ textarea {
 
 .values {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .value-outfit-head {
@@ -2107,8 +2578,8 @@ textarea {
 
 .vo-label {
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -2116,7 +2587,6 @@ textarea {
 .vo-total {
   font-family: var(--mono);
   font-size: 15px;
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
 }
@@ -2137,7 +2607,6 @@ textarea {
   object-fit: contain;
   background: var(--sunken);
   border: 1px solid var(--line);
-  border-radius: 6px;
 }
 
 .value-outfit-pieces .no-photo {
@@ -2146,26 +2615,25 @@ textarea {
   width: 52px;
   height: 62px;
   background: var(--sunken);
-  border-radius: 6px;
+  border: 1px solid var(--line);
   color: var(--ink-3);
 }
 
-/* gaps */
+/* --------------------------------------------------------- what is missing */
 .gaps-panel {
   margin-top: 0;
 }
 
 .gaps {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 10px;
-  margin-bottom: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(214px, 1fr));
+  gap: 11px;
+  margin-bottom: 16px;
 }
 
 .gap {
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  padding: 13px 15px;
+  border: 1px solid var(--line-strong);
   background: var(--surface);
 }
 
@@ -2178,25 +2646,27 @@ textarea {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
 }
 
 .gap-season {
-  font-weight: 600;
+  font-family: var(--serif);
+  font-size: 15.5px;
   text-transform: capitalize;
 }
 
 .gap-range {
   font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .gap-badge {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
@@ -2206,27 +2676,27 @@ textarea {
 
 .gap-missing {
   margin: 0;
-  padding-left: 16px;
-  font-size: 12.5px;
+  padding-left: 17px;
+  font-size: 13.5px;
   color: var(--ink);
 }
 
 .gap-ok {
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--ink-2);
 }
 
-/* ============================================================ brand field */
+/* ------------------------------------------------------------ the collector */
 .brand-field {
   display: grid;
-  gap: 5px;
-  margin-top: 14px;
+  gap: 4px;
+  margin-top: 18px;
 }
 
 .brand-field > span {
   font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
@@ -2234,21 +2704,22 @@ textarea {
 .brand-field em {
   font-style: normal;
   color: var(--ink-3);
-  opacity: 0.7;
+  opacity: 0.65;
 }
 
 .brand-field input {
-  padding: 9px 11px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--surface);
-  font-size: 14px;
+  padding: 8px 2px;
+  border: none;
+  border-bottom: 1px solid var(--line-strong);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
-/* ======================================================= reading (result) */
+/* ===================================================== the specimen reading */
 .analysis-stack {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .uploaded {
@@ -2260,84 +2731,157 @@ textarea {
 .uploaded img {
   max-height: 120px;
   max-width: 100%;
-  border-radius: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   object-fit: contain;
   background: var(--sunken);
 }
 
 .uploaded figcaption {
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-3);
 }
 
 .reading-card {
-  padding: 16px;
+  padding: 20px;
 }
 
+/* the sheet: specimen mounted at the left, determination label pasted into the
+   lower right, the way a herbarium sheet is actually laid out */
 .reading-top {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: end;
+}
+
+@media (min-width: 620px) {
+  .reading-top {
+    grid-template-columns: 148px minmax(0, 1fr);
+  }
 }
 
 .reading-cut {
-  flex: none;
-  width: 120px;
-  height: 150px;
+  position: relative;
+  align-self: start;
   display: grid;
   place-items: center;
-  padding: 8px;
+  height: 200px;
+  padding: 18px 10px 10px;
   overflow: hidden;
   background: var(--sunken);
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+}
+
+/* the straps again, so a mounted specimen reads the same everywhere */
+.reading-cut::before,
+.reading-cut::after {
+  content: "";
+  position: absolute;
+  top: 15px;
+  width: 22px;
+  border-top: 1.4px solid var(--line-strong);
+  pointer-events: none;
+}
+
+.reading-cut::before {
+  left: 7px;
+  transform: rotate(-40deg);
+  transform-origin: left center;
+}
+
+.reading-cut::after {
+  right: 7px;
+  transform: rotate(40deg);
+  transform-origin: right center;
 }
 
 .reading-cut img {
   max-width: 100%;
-  max-height: 134px;
+  max-height: 168px;
   object-fit: contain;
-  filter: drop-shadow(0 5px 12px rgba(18, 21, 28, 0.16));
+  filter: drop-shadow(0 5px 12px rgba(32, 29, 24, 0.22));
 }
 
-.reading-lead {
+/* the determination label: pasted, ruled with a double frame, a half-degree
+   off true, and carrying its own typed field block */
+.det-label {
+  position: relative;
   min-width: 0;
-  display: grid;
-  gap: 3px;
-  align-content: start;
+  padding: 15px 17px 16px;
+  background: var(--surface);
+  border: 1px solid var(--label-edge);
+  outline: 1px solid var(--line);
+  outline-offset: 3px;
+  box-shadow: var(--paste);
+  transform: rotate(-0.4deg);
+}
+
+.det-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 9px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* the accession stamp: how the collection refers to this specimen */
+.accession {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  padding: 2px 6px;
+  opacity: 0.82;
+  transform: rotate(1.6deg);
+  white-space: nowrap;
+}
+
+.accession[data-filed="false"] {
+  color: var(--ink-3);
+  border-color: var(--line-strong);
+  border-style: dashed;
 }
 
 .region-tag {
   display: inline-block;
   margin-right: 8px;
-  padding: 1px 7px;
-  border-radius: 999px;
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
 }
 
 .brand-price {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 6px;
+  gap: 11px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
   flex-wrap: wrap;
 }
 
 .brand-price .brand {
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-2);
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
   padding: 2px 7px;
 }
 
@@ -2347,18 +2891,188 @@ textarea {
   gap: 6px;
   font-family: var(--mono);
   font-size: 15px;
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
 
 .brand-price .est {
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  font-size: 8.5px;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
   color: var(--amber);
   border: 1px solid var(--amber);
-  border-radius: 4px;
   padding: 1px 5px;
   cursor: help;
+}
+
+/* which layer this garment is: printed at the far end of the warmth scale,
+   sitting on the same baseline as the scale's own numerals */
+.layer-note {
+  flex: none;
+  margin-bottom: 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ============================================== the pasted revision slip */
+.slip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.slip-id {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+}
+
+/* what the machine said stays legible under the strike; what you said is in
+   the collection's own ink */
+.slip-rev {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+.slip-rev .group {
+  min-width: 62px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.slip-rev s {
+  color: var(--ink-2);
+  text-decoration-color: var(--bad);
+}
+
+.slip-rev em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+/* ======================================== what was seen but not written down
+   The uncertain half of a reading. A herbarium sheet carries these as pencil
+   notes in the margin rather than as typed determinations, and that is exactly
+   their status here: observed, unresolved, and deliberately not filed. */
+.observations {
+  background: var(--sunken);
+  background-image: none;
+  box-shadow: inset 0 2px 8px -4px rgba(32, 29, 24, 0.35);
+}
+
+.obs-head {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.observations ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.observations li {
+  position: relative;
+  padding: 10px 0 10px 20px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14.5px;
+  color: var(--ink-2);
+  max-width: 74ch;
+}
+
+.observations li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* the marginal mark a botanist actually uses for "compare with, unresolved" */
+.observations li::before {
+  content: "?";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--amber);
+}
+
+/* how a piece was found, printed on the determination label beside the
+   provenance: only ever shown when it was not cut out of the photograph */
+.presence {
+  color: var(--amber);
+}
+
+/* a bag is not weather, and says so instead of printing a scale that lies */
+.not-weather {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-strong);
+  font-size: 14px;
+  color: var(--ink-2);
+  max-width: 68ch;
+}
+
+/* ================================================= the addendum: what we missed */
+.missing {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.missing-open {
+  width: 100%;
+  justify-content: center;
+  border-style: dashed;
+}
+
+/* the addendum slip is pasted the other way from a revision slip, so a sheet
+   carrying both reads as two separate acts rather than one long correction */
+.receipt.addendum {
+  transform: rotate(0.55deg);
+}
+
+.receipt.addendum b {
+  color: var(--accent);
+}
+
+.missing .fix {
+  margin-top: 0;
+}
+
+.missing .prefs-chips {
+  gap: 6px;
+}
+
+/* the region picker has nine buttons and has to wrap without the label column
+   collapsing next to it */
+@media (max-width: 620px) {
+  .missing .fix-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+.gap-advisable {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.outfit-advisable {
+  padding: 0 19px 16px;
+  font-size: 13.5px;
+  color: var(--ink-2);
 }

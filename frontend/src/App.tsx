@@ -4,6 +4,7 @@ import { ApiError } from "./api";
 import Derivation from "./components/Derivation";
 import Flag from "./components/Flag";
 import Insights from "./components/Insights";
+import Missing from "./components/Missing";
 import Preferences from "./components/Preferences";
 import Profile from "./components/Profile";
 import Reading from "./components/Reading";
@@ -11,7 +12,7 @@ import Recommend from "./components/Recommend";
 import Shop from "./components/Shop";
 import Specimen from "./components/Specimen";
 import Wardrobe from "./components/Wardrobe";
-import { Aperture, Moon, Sun } from "./components/icons";
+import { Aperture, Auto, Moon, Sun } from "./components/icons";
 import type {
   Analysis,
   FeedbackStats,
@@ -25,23 +26,62 @@ type Conn = "connecting" | "up" | "down";
 type Phase = "idle" | "working" | "done" | "error";
 type View = "app" | "admin";
 
+/**
+ * Three states, not two.
+ *
+ * "system" is the default and it is not a fallback: someone who has set their
+ * machine to dark has already answered this question, and an app that opens
+ * light anyway is asking them to answer it twice. It also keeps following, so
+ * a machine that switches at sunset takes the app with it.
+ *
+ * The other two are an explicit override and are remembered, because a choice
+ * that has to be made again on every reload is not a choice.
+ */
+type Theme = "system" | "light" | "dark";
+
+const THEME_KEY = "fitting-room:theme";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+
+function storedTheme(): Theme {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+  } catch {
+    // private browsing, or storage disabled: the system default is a fine answer
+  }
+  return "system";
+}
+
+/**
+ * A section heading.
+ *
+ * `step` is the position in the analysis sequence and is only passed by the
+ * three sections that are actually a sequence: a photo becomes a reading
+ * becomes the arithmetic behind it. The wardrobe and what to wear are places
+ * you go, not steps you take, so numbering them would be grammar rather than
+ * information.
+ *
+ * `state` is a live readout — how many garments were found, whether the
+ * wardrobe is reachable. It is left off when the only thing it could do is
+ * restate the title in smaller type.
+ */
 function Section({
-  n,
+  step,
   title,
-  aside,
+  state,
   children,
 }: {
-  n: string;
+  step?: string;
   title: string;
-  aside?: string;
+  state?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="section">
+    <section className="section" data-stepped={step ? "true" : undefined}>
       <div className="section-head">
-        <span className="n">{n}</span>
+        {step && <span className="n">{step}</span>}
         <h2>{title}</h2>
-        {aside && <span className="aside">{aside}</span>}
+        {state && <span className="aside">{state}</span>}
       </div>
       {children}
     </section>
@@ -49,7 +89,10 @@ function Section({
 }
 
 export default function App() {
-  const [theme, setTheme] = useState<"light" | "dark" | null>(null);
+  const [theme, setTheme] = useState<Theme>(storedTheme);
+  const [systemDark, setSystemDark] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(DARK_QUERY).matches
+  );
   const [view, setView] = useState<View>(() =>
     window.location.hash.includes("admin") ? "admin" : "app"
   );
@@ -75,10 +118,28 @@ export default function App() {
   // difference between a slow app and an app that looks hung.
   const analysed = useRef(0);
 
+  // On "system" the attribute is removed entirely rather than set to whatever
+  // the machine currently is, so the stylesheet's own media query does the
+  // work and native controls get the right color-scheme with it.
   useEffect(() => {
-    if (theme) document.documentElement.setAttribute("data-theme", theme);
-    else document.documentElement.removeAttribute("data-theme");
+    const root = document.documentElement;
+    if (theme === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", theme);
+    try {
+      if (theme === "system") localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // storage refused: the choice still holds for this session
+    }
   }, [theme]);
+
+  // keep following the machine while no explicit choice is in force
+  useEffect(() => {
+    const mq = window.matchMedia(DARK_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   // the admin statistics live on their own page, reachable at #/admin so a
   // deep link and the browser's back button both work without a router
@@ -161,7 +222,7 @@ export default function App() {
     } catch (e) {
       setPhase("error");
       if (e instanceof ApiError) setError(e.message);
-      else setError("could not reach the backend. Is uvicorn still running?");
+      else setError("Lost contact with the analyser while reading that photo.");
       void check();
     }
   }
@@ -201,6 +262,13 @@ export default function App() {
   }
 
   const busy = phase === "working";
+  // the icon shows the state, the label says what pressing it does next
+  const themeLabel =
+    theme === "system"
+      ? `following your machine (${systemDark ? "dark" : "light"}) — press for light`
+      : theme === "light"
+        ? "light — press for dark"
+        : "dark — press to follow your machine again";
   const graphUp = conn === "up" && !!health?.neo4j;
   const corrections = feedbackStats?.corpus.total ?? 0;
   const symbol = ontology?.currency_symbol ?? "€";
@@ -213,7 +281,7 @@ export default function App() {
         </span>
         <div className="wordmark">
           <h1>Fitting Room</h1>
-          <p>garment · instrument</p>
+          <p>garment collection · determined locally</p>
         </div>
 
         <nav className="viewnav" aria-label="section">
@@ -236,207 +304,215 @@ export default function App() {
           </span>
           <button
             className="icon-btn"
-            aria-label="switch between light and dark"
+            aria-label={themeLabel}
+            title={themeLabel}
             onClick={() =>
-              setTheme((t) => {
-                const current =
-                  t ??
-                  (window.matchMedia("(prefers-color-scheme: dark)").matches
-                    ? "dark"
-                    : "light");
-                return current === "dark" ? "light" : "dark";
-              })
+              setTheme((t) =>
+                t === "system" ? "light" : t === "light" ? "dark" : "system"
+              )
             }
           >
-            {theme === "dark" ? <Sun /> : <Moon />}
+            {theme === "system" ? <Auto /> : theme === "dark" ? <Moon /> : <Sun />}
           </button>
         </div>
       </header>
 
       {conn === "down" && (
         <p className="banner bad" role="status">
-          The backend is not answering at <code>{api.BASE}</code>. Start it with{" "}
-          <code>uvicorn api:app --port 8000</code> and this page will unlock by
-          itself.
+          Fitting Room cannot reach the part of itself that reads photographs, so
+          nothing can be analysed yet. Start it with{" "}
+          <code>uvicorn api:app --port 8000</code> and this page unlocks on its
+          own — there is nothing to click here.
         </p>
       )}
 
       {conn === "up" && health && !health.neo4j && (
         <p className="banner warn" role="status">
-          Neo4j is not reachable, so saving, the wardrobe and the recommender are
-          switched off. Analysis works: the weather falls back to the same table
-          the graph is seeded from. Start it with <code>docker compose up -d</code>.
+          Your wardrobe is not open, so garments cannot be kept and nothing can be
+          recommended. Reading a photograph still works, and the weather it
+          reports is derived from the same table the wardrobe uses. Open it with{" "}
+          <code>docker compose up -d</code>.
         </p>
       )}
 
       {view === "admin" ? (
-        <>
-          <Section
-            n="—"
-            title="Admin statistics"
-            aside="the whole graph, not one wardrobe"
-          >
-            <p className="prose" style={{ marginBottom: 18 }}>
-              Everything countable across every stored garment and every
-              correction. This is the maintainer's view; the numbers describe the
-              contents of the database, never the accuracy of the model, which is
-              measured separately by <code>evaluate.py</code>.
-            </p>
-            <Insights data={graphUp ? insightData : null} />
-          </Section>
-        </>
+        <Section title="Admin statistics" state="the whole graph, not one wardrobe">
+          <p className="prose" style={{ marginBottom: 18 }}>
+            Everything countable across every stored garment and every
+            correction. This is the maintainer's view; the numbers describe the
+            contents of the database, never the accuracy of the model, which is
+            measured separately by <code>evaluate.py</code>.
+          </p>
+          <Insights data={graphUp ? insightData : null} />
+        </Section>
       ) : (
         <>
-          <div className="columns">
-            <div>
-              <Section n="01" title="Specimen" aside="one garment photo">
-                <Specimen
-                  file={file}
-                  preview={preview}
-                  disabled={conn !== "up"}
-                  busy={busy}
-                  save={save}
-                  canSave={graphUp}
-                  brand={brand}
-                  onBrandChange={setBrand}
-                  onPick={pick}
-                  onSaveChange={setSave}
-                  onAnalyse={analyse}
-                />
-                {busy && (
-                  <p className="banner" role="status">
-                    {analysed.current === 0
-                      ? "loading the model into memory. This happens once per server start and takes 20 to 40 seconds."
-                      : "analysing, about three seconds."}
-                  </p>
-                )}
-                {phase === "error" && error && (
-                  <p className="banner bad" role="alert">
-                    {error}
-                  </p>
-                )}
-              </Section>
-            </div>
+      <div className="columns">
+        <div>
+          <Section step="01" title="Specimen" state={file ? "ready to read" : undefined}>
+            <Specimen
+              file={file}
+              preview={preview}
+              disabled={conn !== "up"}
+              busy={busy}
+              save={save}
+              canSave={graphUp}
+              brand={brand}
+              onBrandChange={setBrand}
+              onPick={pick}
+              onSaveChange={setSave}
+              onAnalyse={analyse}
+            />
+            {busy && (
+              <p className="banner" role="status">
+                {analysed.current === 0
+                  ? "Warming up. The first photograph of a session waits 20 to 40 seconds while the recogniser loads; every one after it takes about three."
+                  : "Reading the photograph, about three seconds."}
+              </p>
+            )}
+            {phase === "error" && error && (
+              <p className="banner bad" role="alert">
+                {error}
+              </p>
+            )}
+          </Section>
+        </div>
 
-            <div>
-              <Section
-                n="02"
-                title="Reading"
-                aside={
-                  result
-                    ? result.count > 1
-                      ? `${result.count} garments found`
-                      : "from the api"
-                    : "awaiting a specimen"
-                }
-              >
-                {result ? (
-                  <div className="analysis-stack">
-                    {result.count > 1 && (
-                      <p className="banner" role="status">
-                        {result.count} garments found in this photo. Each is
-                        segmented, analysed and, if saved, stored on its own.
-                      </p>
-                    )}
-                    {preview && (
-                      <figure className="uploaded">
-                        <img src={preview} alt="the photo as uploaded" />
-                        <figcaption>as uploaded — the wearer is removed below</figcaption>
-                      </figure>
-                    )}
-                    {result.garments.map((g) => (
-                      <Reading
-                        key={g.analysis_id}
-                        garment={g}
-                        multi={result.count > 1}
-                        currencySymbol={symbol}
-                      >
-                        <Flag
-                          analysis={g}
-                          ontology={ontology}
-                          onApplied={(fb) => applyFeedback(g.analysis_id, fb)}
-                        />
-                        <Shop
-                          attrs={{
-                            color: g.tags.color?.label,
-                            material: g.tags.material?.label,
-                            category: g.tags.category?.label,
-                          }}
-                        />
-                      </Reading>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="panel">
-                    <p className="reading-empty">
-                      Drop a photo on the left. The API returns a category, a
-                      material, a warmth number from 1 to 11 and the seasons that
-                      number falls into. Nothing on this page is guessed by the
-                      browser.
-                    </p>
-                    <ul className="steps">
-                      <li>
-                        <b>01</b> only the clothing is kept, the wearer removed
-                      </li>
-                      <li>
-                        <b>02</b> each garment in the photo, segmented apart
-                      </li>
-                      <li>
-                        <b>03</b> category · material · sleeve · colour · style
-                      </li>
-                      <li>
-                        <b>04</b> warmth arithmetic, then the season windows
-                      </li>
+        <div>
+          <Section
+            step="02"
+            title="Determination"
+            state={
+              result
+                ? result.count > 1
+                  ? `${result.count} garments found`
+                  : undefined
+                : "awaiting a specimen"
+            }
+          >
+            {result ? (
+              <div className="analysis-stack">
+                {result.count > 1 && (
+                  <p className="banner" role="status">
+                    {result.count} garments found in this photo. Each is
+                    segmented, analysed and, if saved, stored on its own.
+                  </p>
+                )}
+                {preview && (
+                  <figure className="uploaded">
+                    <img src={preview} alt="the photo as uploaded" />
+                    <figcaption>as uploaded — the wearer is removed below</figcaption>
+                  </figure>
+                )}
+                {result.garments.map((g) => (
+                  <Reading
+                    key={g.analysis_id}
+                    garment={g}
+                    multi={result.count > 1}
+                    currencySymbol={symbol}
+                  >
+                    <Flag
+                      analysis={g}
+                      ontology={ontology}
+                      onApplied={(fb) => applyFeedback(g.analysis_id, fb)}
+                    />
+                    <Shop
+                      attrs={{
+                        color: g.tags.color?.label,
+                        material: g.tags.material?.label,
+                        category: g.tags.category?.label,
+                      }}
+                    />
+                  </Reading>
+                ))}
+
+                {/* everything the system saw and would not swear to, in its own
+                    words, followed by the way to tell it what it never saw */}
+                {result.notes.length > 0 && (
+                  <div className="panel observations">
+                    <p className="obs-head">what was seen but not written down</p>
+                    <ul>
+                      {result.notes.map((note, i) => (
+                        <li key={i}>{note}</li>
+                      ))}
                     </ul>
                   </div>
                 )}
-              </Section>
-            </div>
-          </div>
 
-          <Section
-            n="03"
-            title="Derivation"
-            aside={result && result.count > 1 ? "for the main piece" : "why that weather"}
-          >
-            {result && result.garments[0] && ontology ? (
-              <Derivation analysis={result.garments[0]} ontology={ontology} />
+                <Missing
+                  analysisId={result.analysis_id}
+                  ontology={ontology}
+                  onReported={refreshAll}
+                />
+              </div>
             ) : (
               <div className="panel">
                 <p className="reading-empty">
-                  The weather is not predicted, it is derived: material warmth
-                  plus category warmth, adjusted for sleeves, matched against the
-                  season windows. Analyse a photo and the arithmetic for it
-                  appears here.
+                  Mount a photograph on the left and a determination label is
+                  typed here: a category, a material, a warmth from 1 to 11 and
+                  the seasons that warmth falls into, each with the confidence
+                  behind it. Nothing here is guessed by the browser, and nothing
+                  you later revise is erased.
                 </p>
+                <ul className="steps">
+                  <li>
+                    <b>01</b> only the clothing is kept, the wearer removed
+                  </li>
+                  <li>
+                    <b>02</b> each garment in the photo, segmented apart
+                  </li>
+                  <li>
+                    <b>03</b> category · material · sleeve · colour · style
+                  </li>
+                  <li>
+                    <b>04</b> warmth arithmetic, then the season windows
+                  </li>
+                </ul>
               </div>
             )}
           </Section>
+        </div>
+      </div>
 
-          <Section
-            n="04"
-            title="Wardrobe"
-            aside={graphUp ? "click a part of the body" : "graph offline"}
-          >
-            <Wardrobe
-              enabled={graphUp}
-              refreshKey={refreshKey}
-              currencySymbol={symbol}
-              onChanged={refreshAll}
-            />
-          </Section>
+      <Section
+        step="03"
+        title="Derivation"
+        state={result && result.count > 1 ? "for the main piece" : undefined}
+      >
+        {result && result.garments[0] && ontology ? (
+          <Derivation analysis={result.garments[0]} ontology={ontology} />
+        ) : (
+          <div className="panel">
+            <p className="reading-empty">
+              What is underneath the label. The weather is not predicted, it is
+              derived: material warmth plus category warmth, adjusted for
+              sleeves, matched against the season windows. Read a photograph and
+              the arithmetic for it appears here.
+            </p>
+          </div>
+        )}
+      </Section>
 
-          <Section n="05" title="What to wear" aside="from your wardrobe and taste">
-            <Recommend enabled={graphUp} ontology={ontology} refreshKey={refreshKey} />
-            <details className="prefs-disclosure">
-              <summary>tune your preferences</summary>
-              <Preferences enabled={graphUp} ontology={ontology} onSaved={refreshAll} />
-            </details>
-          </Section>
+      <Section title="Wardrobe" state={graphUp ? undefined : "not open"}>
+        <Wardrobe
+          enabled={graphUp}
+          refreshKey={refreshKey}
+          currencySymbol={symbol}
+          onChanged={refreshAll}
+        />
+      </Section>
 
-          <Section n="06" title="Your wardrobe" aside="style, value, and the gaps">
-            <Profile enabled={graphUp} refreshKey={refreshKey} />
-          </Section>
+      <Section title="What to wear" state={graphUp ? undefined : "not open"}>
+        <Recommend enabled={graphUp} ontology={ontology} refreshKey={refreshKey} />
+        <details className="prefs-disclosure">
+          <summary>tune your preferences</summary>
+          <Preferences enabled={graphUp} ontology={ontology} onSaved={refreshAll} />
+        </details>
+      </Section>
+
+      <Section title="Your wardrobe" state={graphUp ? undefined : "not open"}>
+        <Profile enabled={graphUp} refreshKey={refreshKey} />
+      </Section>
         </>
       )}
 
